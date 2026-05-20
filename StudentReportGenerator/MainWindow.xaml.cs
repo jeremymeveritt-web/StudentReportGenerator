@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
@@ -16,11 +17,14 @@ namespace StudentReportGenerator
 {
     public partial class MainWindow : Window
     {
+        // Commercial Optimization: Reuse a single static HttpClient socket across all services to prevent connection exhaustion
+        private static readonly HttpClient _sharedHttpClient = new HttpClient();
+
         private ObservableCollection<SessionRecord> _sessionHistory = new ObservableCollection<SessionRecord>();
         private AppSettings _currentSettings = new AppSettings();
         private bool _isSettingsUnlocked = false;
         private List<StudentProfile> _studentDatabase = new List<StudentProfile>();
-        private System.Threading.CancellationTokenSource _batchCancellationTokenSource;
+        private System.Threading.CancellationTokenSource? _batchCancellationTokenSource;
 
         public MainWindow()
         {
@@ -54,6 +58,7 @@ namespace StudentReportGenerator
             pwdSmtpPassword.Password = _currentSettings.SmtpPassword;
             chkDarkMode.IsChecked = _currentSettings.IsDarkMode;
 
+            ApplyDarkMode(_currentSettings.IsDarkMode);
             ApplyBranding();
 
             foreach (ComboBoxItem item in cmbAiProvider.Items)
@@ -233,17 +238,17 @@ namespace StudentReportGenerator
 
         private async Task<bool> ProcessSingleReport(string studentName, string notes, string requestedProvider, TextBox targetBox)
         {
-            btnGenerate.IsEnabled = false;
-            prgLoading.Visibility = Visibility.Visible;
+            if (btnGenerate != null) btnGenerate.IsEnabled = false;
+            if (prgLoading != null) prgLoading.Visibility = Visibility.Visible;
 
             string activeKey = ""; string activeModel = ""; IAiService activeAiEngine;
 
-            if (requestedProvider.Contains("NVIDIA")) { activeKey = _currentSettings.NvidiaApiKey; activeModel = _currentSettings.NvidiaModelTier; activeAiEngine = new NvidiaReportService(activeKey); }
-            else if (requestedProvider.Contains("OpenAI")) { activeKey = _currentSettings.OpenAiApiKey; activeModel = _currentSettings.OpenAiModelTier; activeAiEngine = new OpenAiReportService(activeKey); }
-            else if (requestedProvider.Contains("Claude")) { activeKey = _currentSettings.ClaudeApiKey; activeModel = _currentSettings.ClaudeModelTier; activeAiEngine = new ClaudeReportService(activeKey); }
-            else { activeKey = _currentSettings.GeminiApiKey; activeModel = _currentSettings.GeminiModelTier; activeAiEngine = new GeminiReportService(activeKey); }
+            if (requestedProvider.Contains("NVIDIA")) { activeKey = _currentSettings.NvidiaApiKey; activeModel = _currentSettings.NvidiaModelTier; activeAiEngine = new NvidiaReportService(_sharedHttpClient, activeKey); }
+            else if (requestedProvider.Contains("OpenAI")) { activeKey = _currentSettings.OpenAiApiKey; activeModel = _currentSettings.OpenAiModelTier; activeAiEngine = new OpenAiReportService(_sharedHttpClient, activeKey); }
+            else if (requestedProvider.Contains("Claude")) { activeKey = _currentSettings.ClaudeApiKey; activeModel = _currentSettings.ClaudeModelTier; activeAiEngine = new ClaudeReportService(_sharedHttpClient, activeKey); }
+            else { activeKey = _currentSettings.GeminiApiKey; activeModel = _currentSettings.GeminiModelTier; activeAiEngine = new GeminiReportService(_sharedHttpClient, activeKey); }
 
-            if (string.IsNullOrWhiteSpace(activeKey)) { targetBox.Text = "ERROR: Missing API Key."; prgLoading.Visibility = Visibility.Collapsed; btnGenerate.IsEnabled = true; return false; }
+            if (string.IsNullOrWhiteSpace(activeKey)) { targetBox.Text = "ERROR: Missing API Key."; if (prgLoading != null) prgLoading.Visibility = Visibility.Collapsed; if (btnGenerate != null) btnGenerate.IsEnabled = true; return false; }
 
             int selectedWordCount = 150; if (cmbWordCount.SelectedItem is ComboBoxItem item) int.TryParse(item.Tag?.ToString(), out selectedWordCount);
             string selectedInstruction = (cmbFramework.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
@@ -272,7 +277,8 @@ namespace StudentReportGenerator
             };
 
             var response = await activeAiEngine.GenerateReportAsync(request);
-            prgLoading.Visibility = Visibility.Collapsed; btnGenerate.IsEnabled = true;
+            if (prgLoading != null) prgLoading.Visibility = Visibility.Collapsed;
+            if (btnGenerate != null) btnGenerate.IsEnabled = true;
 
             if (response.IsSuccess)
             {
@@ -458,33 +464,51 @@ namespace StudentReportGenerator
         private void RefreshCurriculumDropdown() { cmbCurriculum.ItemsSource = _currentSettings.CurriculumTopics; }
         private void RefreshFrameworkDropdown() { cmbFramework.Items.Clear(); foreach (var f in _currentSettings.CustomFrameworks) cmbFramework.Items.Add(new ComboBoxItem { Content = f.Name, Tag = f.Instruction }); }
 
+        private void UpdateResource(string key, object value)
+        {
+            // Update Globally
+            Application.Current.Resources[key] = value;
+            // Update Locally on this Window context to force immediate UI recalculation overrides
+            if (this.Resources.Contains(key)) this.Resources[key] = value;
+            else this.Resources.Add(key, value);
+        }
+
         private void ApplyDarkMode(bool isDark)
         {
             if (isDark)
             {
-                Application.Current.Resources["ThemeAppBg"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF1E1E1E"));
-                Application.Current.Resources["ThemeCardBg"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF2D2D30"));
-                Application.Current.Resources["ThemeText"] = Brushes.White;
-                Application.Current.Resources["ThemeMutedText"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFAAAAAA"));
-                Application.Current.Resources["ThemeBorder"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF444444"));
-                Application.Current.Resources["ThemeInputBg"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF1E1E1E"));
-                Application.Current.Resources["ThemePreviewBg"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF1E1E1E"));
-                lblActiveModule.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFCE93D8"));
+                UpdateResource("ThemeAppBg", new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF1E1E1E")));
+                UpdateResource("ThemeCardBg", new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF2D2D30")));
+                UpdateResource("ThemeText", Brushes.White);
+                UpdateResource("ThemeMutedText", new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFAAAAAA")));
+                UpdateResource("ThemeBorder", new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF444444")));
+                UpdateResource("ThemeInputBg", new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF252526")));
+                UpdateResource("ThemePreviewBg", new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF2D2D30")));
+                if (lblActiveModule != null) lblActiveModule.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFCE93D8"));
             }
             else
             {
-                Application.Current.Resources["ThemeAppBg"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFFAFAFA"));
-                Application.Current.Resources["ThemeCardBg"] = Brushes.White;
-                Application.Current.Resources["ThemeText"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF333333"));
-                Application.Current.Resources["ThemeMutedText"] = Brushes.Gray;
-                Application.Current.Resources["ThemeBorder"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFDDDDDD"));
-                Application.Current.Resources["ThemeInputBg"] = Brushes.White;
-                Application.Current.Resources["ThemePreviewBg"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFF9F9F9"));
-                lblActiveModule.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF9C27B0"));
+                UpdateResource("ThemeAppBg", new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFFAFAFA")));
+                UpdateResource("ThemeCardBg", Brushes.White);
+                UpdateResource("ThemeText", new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF333333")));
+                UpdateResource("ThemeMutedText", Brushes.Gray);
+                UpdateResource("ThemeBorder", new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFDDDDDD")));
+                UpdateResource("ThemeInputBg", Brushes.White);
+                UpdateResource("ThemePreviewBg", new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFF9F9F9")));
+                if (lblActiveModule != null) lblActiveModule.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF9C27B0"));
             }
         }
 
-        private void chkDarkMode_Changed(object sender, RoutedEventArgs e) { ApplyDarkMode(chkDarkMode.IsChecked == true); }
+        private void chkDarkMode_Changed(object sender, RoutedEventArgs e)
+        {
+            bool isDark = chkDarkMode.IsChecked == true;
+            ApplyDarkMode(isDark);
+            if (_currentSettings != null)
+            {
+                _currentSettings.IsDarkMode = isDark;
+                SecureSettingsService.SaveSettings(_currentSettings);
+            }
+        }
 
         private void MenuItem_EditHistory_Click(object sender, RoutedEventArgs e)
         {
@@ -629,7 +653,7 @@ namespace StudentReportGenerator
                 {
                     string[] lines = System.IO.File.ReadAllLines(openDialog.FileName);
                     txtBatchData.Clear();
-                    var csvParser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
+                    var csvParser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(Y?![^\"]*\"))");
                     foreach (var line in lines)
                     {
                         if (string.IsNullOrWhiteSpace(line)) continue;
@@ -648,25 +672,22 @@ namespace StudentReportGenerator
             }
         }
 
-        // --- SPRINT 25: THE EMERGENCY BRAKE & BATCH UPDATES ---
         private async void btnGenerateBatch_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(txtBatchData.Text)) return;
 
-            // Switch UI to "Cancel Mode"
             btnGenerateBatch.Visibility = Visibility.Collapsed;
             btnCancelBatch.Visibility = Visibility.Visible;
             btnCancelBatch.IsEnabled = true;
             btnCancelBatch.Content = "🛑 Stop Generation";
 
             ResetCompareModeUI();
-            prgLoading.Visibility = Visibility.Visible;
+            if (prgLoading != null) prgLoading.Visibility = Visibility.Visible;
             txtOutput.Text = "Starting batch process...\n";
 
             var lines = txtBatchData.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             int successCount = 0;
 
-            // Create a fresh cancellation token for this run
             _batchCancellationTokenSource = new System.Threading.CancellationTokenSource();
             var token = _batchCancellationTokenSource.Token;
 
@@ -674,39 +695,35 @@ namespace StudentReportGenerator
             {
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    // Check if the user slammed the brakes
                     if (token.IsCancellationRequested)
                     {
                         txtOutput.Text += "\n\n⚠️ BATCH CANCELLED BY USER.";
-                        break; // Exit the loop safely
+                        break;
                     }
 
                     var parts = lines[i].Split('|');
                     if (parts.Length < 2) continue;
 
-                    lblStatus.Text = $"Generating report for {parts[0].Trim()} ({i + 1} of {lines.Length})...";
+                    if (lblStatus != null) lblStatus.Text = $"Generating report for {parts[0].Trim()} ({i + 1} of {lines.Length})...";
 
                     bool success = await ProcessSingleReport(parts[0].Trim(), parts[1].Trim(), _currentSettings.AiProvider, txtOutput);
                     if (success) successCount++;
 
-                    // Wait 1.5s to prevent spamming the API, but allow the wait to be cancelled!
                     if (i < lines.Length - 1 && !token.IsCancellationRequested)
                     {
                         await Task.Delay(1500, token);
                     }
                 }
 
-                lblStatus.Text = token.IsCancellationRequested ? $"Batch Stopped. {successCount} reports generated." : $"Batch Complete! {successCount} reports generated.";
+                if (lblStatus != null) lblStatus.Text = token.IsCancellationRequested ? $"Batch Stopped. {successCount} reports generated." : $"Batch Complete! {successCount} reports generated.";
             }
             catch (TaskCanceledException)
             {
-                // This catches the Task.Delay if it is interrupted mid-wait
-                lblStatus.Text = $"Batch Stopped. {successCount} reports generated.";
+                if (lblStatus != null) lblStatus.Text = $"Batch Stopped. {successCount} reports generated.";
             }
             finally
             {
-                // ALWAYS restore the UI, even if an error happens
-                prgLoading.Visibility = Visibility.Collapsed;
+                if (prgLoading != null) prgLoading.Visibility = Visibility.Collapsed;
                 btnGenerateBatch.Visibility = Visibility.Visible;
                 btnCancelBatch.Visibility = Visibility.Collapsed;
 
@@ -715,14 +732,13 @@ namespace StudentReportGenerator
             }
         }
 
-        // The button that triggers the emergency brake
         private void btnCancelBatch_Click(object sender, RoutedEventArgs e)
         {
             if (_batchCancellationTokenSource != null && !_batchCancellationTokenSource.IsCancellationRequested)
             {
                 _batchCancellationTokenSource.Cancel();
                 btnCancelBatch.Content = "Stopping...";
-                btnCancelBatch.IsEnabled = false; // Prevent double-clicking
+                btnCancelBatch.IsEnabled = false;
             }
         }
 
@@ -749,13 +765,13 @@ namespace StudentReportGenerator
             txtOutput.Text = $"Waiting on {provider1}...\n";
             txtCompareOutput2.Text = $"Waiting on {provider2}...\n";
             btnCompare.IsEnabled = false;
-            prgLoading.Visibility = Visibility.Visible;
-            lblStatus.Text = "Running simultaneous generation...";
+            if (prgLoading != null) prgLoading.Visibility = Visibility.Visible;
+            if (lblStatus != null) lblStatus.Text = "Running simultaneous generation...";
             var task1 = ProcessSingleReport(txtCompareName.Text, txtCompareNotes.Text, provider1, txtOutput);
             var task2 = ProcessSingleReport(txtCompareName.Text, txtCompareNotes.Text, provider2, txtCompareOutput2);
             await Task.WhenAll(task1, task2);
-            prgLoading.Visibility = Visibility.Collapsed;
-            lblStatus.Text = "Comparison complete!";
+            if (prgLoading != null) prgLoading.Visibility = Visibility.Collapsed;
+            if (lblStatus != null) lblStatus.Text = "Comparison complete!";
             btnCompare.IsEnabled = true;
         }
 
@@ -768,7 +784,7 @@ namespace StudentReportGenerator
                 try
                 {
                     string[] lines = File.ReadAllLines(openDialog.FileName);
-                    var csvParser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
+                    var csvParser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(Y?![^\"]*\"))");
                     int addedCount = 0;
                     foreach (var line in lines)
                     {
@@ -813,14 +829,14 @@ namespace StudentReportGenerator
             }
             lstHistory.ItemsSource = filteredHistory;
             btnShowAllHistory.Visibility = Visibility.Visible;
-            lblStatus.Text = $"Showing filtered history for: {targetName}";
+            if (lblStatus != null) lblStatus.Text = $"Showing filtered history for: {targetName}";
         }
 
         private void btnShowAllHistory_Click(object sender, RoutedEventArgs e)
         {
             lstHistory.ItemsSource = _sessionHistory;
             btnShowAllHistory.Visibility = Visibility.Collapsed;
-            lblStatus.Text = "Ready.";
+            if (lblStatus != null) lblStatus.Text = "Ready.";
         }
 
         private void btnSaveCurriculum_Click(object sender, RoutedEventArgs e)
@@ -883,22 +899,22 @@ namespace StudentReportGenerator
                 if (provider.Contains("NVIDIA"))
                 {
                     activeKey = _currentSettings.NvidiaApiKey;
-                    activeAiEngine = new NvidiaReportService(activeKey);
+                    activeAiEngine = new NvidiaReportService(_sharedHttpClient, activeKey);
                 }
                 else if (provider.Contains("OpenAI"))
                 {
                     activeKey = _currentSettings.OpenAiApiKey;
-                    activeAiEngine = new OpenAiReportService(activeKey);
+                    activeAiEngine = new OpenAiReportService(_sharedHttpClient, activeKey);
                 }
                 else if (provider.Contains("Claude"))
                 {
                     activeKey = _currentSettings.ClaudeApiKey;
-                    activeAiEngine = new ClaudeReportService(activeKey);
+                    activeAiEngine = new ClaudeReportService(_sharedHttpClient, activeKey);
                 }
                 else
                 {
                     activeKey = _currentSettings.GeminiApiKey;
-                    activeAiEngine = new GeminiReportService(activeKey);
+                    activeAiEngine = new GeminiReportService(_sharedHttpClient, activeKey);
                 }
 
                 if (string.IsNullOrWhiteSpace(activeKey))

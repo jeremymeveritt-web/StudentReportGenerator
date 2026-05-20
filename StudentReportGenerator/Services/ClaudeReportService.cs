@@ -9,10 +9,12 @@ namespace StudentReportGenerator.Services
 {
     public class ClaudeReportService : IAiService
     {
+        private readonly HttpClient _httpClient;
         private readonly string _apiKey;
 
-        public ClaudeReportService(string apiKey)
+        public ClaudeReportService(HttpClient httpClient, string apiKey)
         {
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _apiKey = apiKey;
         }
 
@@ -35,17 +37,16 @@ namespace StudentReportGenerator.Services
                     }
                 };
 
-                using (var client = new HttpClient())
+                using (var message = new HttpRequestMessage(HttpMethod.Post, endpoint))
                 {
-                    client.DefaultRequestHeaders.Add("x-api-key", _apiKey);
-                    client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
-                    // Claude requires User-Agent in some environments
-                    client.DefaultRequestHeaders.Add("User-Agent", "StudentReportGenerator/1.0");
+                    message.Headers.Add("x-api-key", _apiKey);
+                    message.Headers.Add("anthropic-version", "2023-06-01");
+                    message.Headers.Add("User-Agent", "StudentReportGenerator/1.0");
 
                     string jsonPayload = JsonSerializer.Serialize(payload);
-                    var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+                    message.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
-                    var response = await client.PostAsync(endpoint, content);
+                    var response = await _httpClient.SendAsync(message);
                     string responseString = await response.Content.ReadAsStringAsync();
 
                     if (response.IsSuccessStatusCode)
@@ -55,13 +56,11 @@ namespace StudentReportGenerator.Services
                             string generatedText = doc.RootElement.GetProperty("content")[0]
                                                       .GetProperty("text").GetString();
 
-                            return new ReportResponse { IsSuccess = true, GeneratedReport = generatedText.Trim() };
+                            return new ReportResponse { IsSuccess = true, GeneratedReport = generatedText?.Trim() ?? string.Empty };
                         }
                     }
-                    else
-                    {
-                        return new ReportResponse { IsSuccess = false, ErrorMessage = $"Claude API Error: {response.StatusCode} - {responseString}" };
-                    }
+
+                    return new ReportResponse { IsSuccess = false, ErrorMessage = $"Claude API Error: {response.StatusCode} - {responseString}" };
                 }
             }
             catch (Exception ex)
@@ -75,8 +74,8 @@ namespace StudentReportGenerator.Services
             return $"You are a professional school teacher writing student reports.\n" +
                    $"Student Name: {request.StudentName}\n" +
                    $"Subject: {request.Subject}\n" +
-                   $"Target/Expected Grade: {request.TargetGrade}\n" + // NEW
-                   $"Learning Support Needs / EHCP: {request.SupportNeeds}\n" + // NEW
+                   $"Target/Expected Grade: {request.TargetGrade}\n" +
+                   $"Learning Support Needs / EHCP: {request.SupportNeeds}\n" +
                    $"Framework: {request.SelectedFramework}\n" +
                    $"Notes: {request.RawNotes}\n\n" +
                    $"Write a ~{request.WordCount} word report. " +

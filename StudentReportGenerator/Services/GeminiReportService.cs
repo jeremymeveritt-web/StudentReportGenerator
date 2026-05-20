@@ -9,10 +9,12 @@ namespace StudentReportGenerator.Services
 {
     public class GeminiReportService : IAiService
     {
+        private readonly HttpClient _httpClient;
         private readonly string _apiKey;
 
-        public GeminiReportService(string apiKey)
+        public GeminiReportService(HttpClient httpClient, string apiKey)
         {
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _apiKey = apiKey;
         }
 
@@ -20,7 +22,6 @@ namespace StudentReportGenerator.Services
         {
             try
             {
-                // Fallback to flash if nothing was selected
                 string activeModel = string.IsNullOrWhiteSpace(request.SelectedModel) ? "gemini-1.5-flash" : request.SelectedModel;
                 string endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{activeModel}:generateContent?key={_apiKey}";
 
@@ -34,32 +35,27 @@ namespace StudentReportGenerator.Services
                     }
                 };
 
-                using (var client = new HttpClient())
+                string jsonPayload = JsonSerializer.Serialize(payload);
+                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync(endpoint, content);
+                string responseString = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
                 {
-                    string jsonPayload = JsonSerializer.Serialize(payload);
-                    var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-                    var response = await client.PostAsync(endpoint, content);
-                    string responseString = await response.Content.ReadAsStringAsync();
-
-                    if (response.IsSuccessStatusCode)
+                    using (JsonDocument doc = JsonDocument.Parse(responseString))
                     {
-                        using (JsonDocument doc = JsonDocument.Parse(responseString))
-                        {
-                            var root = doc.RootElement;
-                            string generatedText = root.GetProperty("candidates")[0]
-                                                       .GetProperty("content")
-                                                       .GetProperty("parts")[0]
-                                                       .GetProperty("text").GetString();
+                        var root = doc.RootElement;
+                        string generatedText = root.GetProperty("candidates")[0]
+                                                   .GetProperty("content")
+                                                   .GetProperty("parts")[0]
+                                                   .GetProperty("text").GetString();
 
-                            return new ReportResponse { IsSuccess = true, GeneratedReport = generatedText.Trim() };
-                        }
-                    }
-                    else
-                    {
-                        return new ReportResponse { IsSuccess = false, ErrorMessage = $"Gemini API Error: {response.StatusCode} - {responseString}" };
+                        return new ReportResponse { IsSuccess = true, GeneratedReport = generatedText?.Trim() ?? string.Empty };
                     }
                 }
+
+                return new ReportResponse { IsSuccess = false, ErrorMessage = $"Gemini API Error: {response.StatusCode} - {responseString}" };
             }
             catch (Exception ex)
             {
@@ -72,8 +68,8 @@ namespace StudentReportGenerator.Services
             return $"You are a professional school teacher writing student reports.\n" +
                    $"Student Name: {request.StudentName}\n" +
                    $"Subject: {request.Subject}\n" +
-                   $"Target/Expected Grade: {request.TargetGrade}\n" + // NEW
-                   $"Learning Support Needs / EHCP: {request.SupportNeeds}\n" + // NEW
+                   $"Target/Expected Grade: {request.TargetGrade}\n" +
+                   $"Learning Support Needs / EHCP: {request.SupportNeeds}\n" +
                    $"Framework: {request.SelectedFramework}\n" +
                    $"Notes: {request.RawNotes}\n\n" +
                    $"Write a ~{request.WordCount} word report. " +

@@ -10,10 +10,12 @@ namespace StudentReportGenerator.Services
 {
     public class NvidiaReportService : IAiService
     {
+        private readonly HttpClient _httpClient;
         private readonly string _apiKey;
 
-        public NvidiaReportService(string apiKey)
+        public NvidiaReportService(HttpClient httpClient, string apiKey)
         {
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _apiKey = apiKey;
         }
 
@@ -39,21 +41,19 @@ namespace StudentReportGenerator.Services
                     stream = false
                 };
 
-                using (var client = new HttpClient())
+                using (var message = new HttpRequestMessage(HttpMethod.Post, endpoint))
                 {
-                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-
+                    message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
                     string jsonPayload = JsonSerializer.Serialize(payload);
-                    var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+                    message.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
-                    var response = await client.PostAsync(endpoint, content);
+                    var response = await _httpClient.SendAsync(message);
                     string responseString = await response.Content.ReadAsStringAsync();
 
                     if (response.IsSuccessStatusCode)
                     {
                         using (JsonDocument doc = JsonDocument.Parse(responseString))
                         {
-                            // Fixed Warning: Safely handle null JSON strings
                             string? generatedText = doc.RootElement.GetProperty("choices")[0]
                                                       .GetProperty("message")
                                                       .GetProperty("content").GetString();
@@ -61,10 +61,8 @@ namespace StudentReportGenerator.Services
                             return new ReportResponse { IsSuccess = true, GeneratedReport = generatedText?.Trim() ?? string.Empty };
                         }
                     }
-                    else
-                    {
-                        return new ReportResponse { IsSuccess = false, ErrorMessage = $"NVIDIA API Error: {response.StatusCode} - {responseString}" };
-                    }
+
+                    return new ReportResponse { IsSuccess = false, ErrorMessage = $"NVIDIA API Error: {response.StatusCode} - {responseString}" };
                 }
             }
             catch (Exception ex)
@@ -78,8 +76,8 @@ namespace StudentReportGenerator.Services
             return $"You are a professional school teacher writing student reports.\n" +
                    $"Student Name: {request.StudentName}\n" +
                    $"Subject: {request.Subject}\n" +
-                   $"Target/Expected Grade: {request.TargetGrade}\n" + // NEW
-                   $"Learning Support Needs / EHCP: {request.SupportNeeds}\n" + // NEW
+                   $"Target/Expected Grade: {request.TargetGrade}\n" +
+                   $"Learning Support Needs / EHCP: {request.SupportNeeds}\n" +
                    $"Framework: {request.SelectedFramework}\n" +
                    $"Notes: {request.RawNotes}\n\n" +
                    $"Write a ~{request.WordCount} word report. " +
