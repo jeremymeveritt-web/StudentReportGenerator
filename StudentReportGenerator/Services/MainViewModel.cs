@@ -15,6 +15,13 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
+    public class ComboBoxItemWrapper
+    {
+        public string Content { get; set; } = string.Empty;
+        public string Tag { get; set; } = string.Empty;
+        public override string ToString() => Content;
+    }
+
     public class MainViewModel : ViewModelBase
     {
         private static readonly HttpClient _sharedHttpClient = new HttpClient();
@@ -28,6 +35,7 @@ namespace StudentReportGenerator.Services
         private bool _isSettingsUnlocked = false;
         private string _statusText = "Ready.";
         private bool _isGenerating = false;
+        private SessionRecord? _selectedHistoryItem;
 
         // Form Fields (Single Report)
         private string _selectedStudentName = string.Empty;
@@ -127,7 +135,6 @@ namespace StudentReportGenerator.Services
 
         public MainViewModel()
         {
-            // Command initializations binding UI interactions to logical functions
             GenerateSingleCommand = new RelayCommand(_ => Task.Run(GenerateSingleReportAsync));
             SaveStudentCommand = new RelayCommand(_ => SaveStudent());
             DeleteStudentCommand = new RelayCommand(_ => DeleteStudent());
@@ -139,8 +146,8 @@ namespace StudentReportGenerator.Services
             CopyReportCommand = new RelayCommand(_ => CopyReportToClipboard());
             SaveWordCommand = new RelayCommand(_ => SaveAsWord());
             SavePdfCommand = new RelayCommand(_ => SaveAsPdf());
-            EmailReportCommand = new RelayCommand(_ => Task.Run(EmailReportAsync));
             ImportBatchCsvCommand = new RelayCommand(_ => ImportBatchCsv());
+            EmailReportCommand = new RelayCommand(_ => Task.Run(EmailReportAsync));
             GenerateBatchCommand = new RelayCommand(_ => Task.Run(GenerateBatchAsync));
             CancelBatchCommand = new RelayCommand(_ => CancelBatchGeneration());
             ExportBatchWordCommand = new RelayCommand(_ => ExportBatchWord());
@@ -154,7 +161,6 @@ namespace StudentReportGenerator.Services
             PreviewToneCommand = new RelayCommand(_ => Task.Run(PreviewToneAsync));
             CompareHistoryCommand = new RelayCommand(_ => CopyHistoryPreviewToCompareBox());
 
-            // Load data pipelines safely
             _sessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>();
             _studentDatabase = StudentDatabaseService.LoadStudents() ?? new List<StudentProfile>();
 
@@ -198,8 +204,9 @@ namespace StudentReportGenerator.Services
 
         private void EvaluateAiProviderOptions(string provider)
         {
+            string cleanProvider = SanitizeControlOutput(provider);
             ModelTierOptions.Clear();
-            if (provider.Contains("NVIDIA"))
+            if (cleanProvider.Contains("NVIDIA"))
             {
                 DynamicApiKeyLabel = "NVIDIA Key:";
                 DynamicApiKeyPassword = _currentSettings.NvidiaApiKey;
@@ -209,7 +216,7 @@ namespace StudentReportGenerator.Services
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Mistral Large (Fast)", Tag = "mistralai/mistral-large-2-instruct" });
                 SelectedModelTier = _currentSettings.NvidiaModelTier;
             }
-            else if (provider.Contains("Gemini"))
+            else if (cleanProvider.Contains("Gemini"))
             {
                 DynamicApiKeyLabel = "Gemini Key:";
                 DynamicApiKeyPassword = _currentSettings.GeminiApiKey;
@@ -217,7 +224,7 @@ namespace StudentReportGenerator.Services
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Gemini 2.5 Pro", Tag = "gemini-2.5-pro" });
                 SelectedModelTier = _currentSettings.GeminiModelTier;
             }
-            else if (provider.Contains("OpenAI"))
+            else if (cleanProvider.Contains("OpenAI"))
             {
                 DynamicApiKeyLabel = "OpenAI Key:";
                 DynamicApiKeyPassword = _currentSettings.OpenAiApiKey;
@@ -225,7 +232,7 @@ namespace StudentReportGenerator.Services
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "GPT-4o", Tag = "gpt-4o" });
                 SelectedModelTier = _currentSettings.OpenAiModelTier;
             }
-            else if (provider.Contains("Claude"))
+            else if (cleanProvider.Contains("Claude"))
             {
                 DynamicApiKeyLabel = "Claude Key:";
                 DynamicApiKeyPassword = _currentSettings.ClaudeApiKey;
@@ -281,12 +288,23 @@ namespace StudentReportGenerator.Services
                 IsLogoVisible = false;
             }
         }
+
+        private string SanitizeControlOutput(string source)
+        {
+            if (string.IsNullOrWhiteSpace(source)) return string.Empty;
+            if (source.Contains("System.Windows.Controls.ComboBoxItem:"))
+            {
+                return source.Replace("System.Windows.Controls.ComboBoxItem:", "").Trim();
+            }
+            return source.Trim();
+        }
         #endregion
 
         #region MVVM Logic Actions Implementation
         private async Task GenerateSingleReportAsync()
         {
-            string compiledNotes = $"Curriculum Topic Studied: {SelectedCurriculumTopic}\n\n";
+            string cleanTopic = SanitizeControlOutput(SelectedCurriculumTopic);
+            string compiledNotes = $"Curriculum Topic Studied: {cleanTopic}\n\n";
             compiledNotes += "Attendance & Timekeeping: ";
             if (IsTimekeepingPerfect) compiledNotes += "100% attendance.\n";
             else if (IsTimekeepingGood) compiledNotes += "Good overall, but has occasional absences.\n";
@@ -302,26 +320,27 @@ namespace StudentReportGenerator.Services
                 compiledNotes += $"\nAdditional Teacher Notes: {CustomNotes}";
 
             IsCompareRightVisible = false;
-            StatusText = "Generating single student report context...";
+            StatusText = "Generating report...";
 
-            await ProcessSingleReportExecutionAsync(SelectedStudentName, compiledNotes, _currentSettings.AiProvider, report => GeneratedReportOutput = report);
+            await ProcessSingleReportExecutionAsync(SanitizeControlOutput(SelectedStudentName), compiledNotes, _currentSettings.AiProvider, report => GeneratedReportOutput = report);
         }
 
         private async Task<bool> ProcessSingleReportExecutionAsync(string name, string notes, string provider, Action<string> onCompleteOutput)
         {
             IsGenerating = true;
             string activeKey = string.Empty;
-            string activeModel = SelectedModelTier;
+            string activeModel = SanitizeControlOutput(SelectedModelTier);
+            string cleanProvider = SanitizeControlOutput(provider);
             IAiService activeAiEngine;
 
-            if (provider.Contains("NVIDIA")) { activeKey = _currentSettings.NvidiaApiKey; activeAiEngine = new NvidiaReportService(_sharedHttpClient, activeKey); }
-            else if (provider.Contains("OpenAI")) { activeKey = _currentSettings.OpenAiApiKey; activeAiEngine = new OpenAiReportService(_sharedHttpClient, activeKey); }
-            else if (provider.Contains("Claude")) { activeKey = _currentSettings.ClaudeApiKey; activeAiEngine = new ClaudeReportService(_sharedHttpClient, activeKey); }
+            if (cleanProvider.Contains("NVIDIA")) { activeKey = _currentSettings.NvidiaApiKey; activeAiEngine = new NvidiaReportService(_sharedHttpClient, activeKey); }
+            else if (cleanProvider.Contains("OpenAI")) { activeKey = _currentSettings.OpenAiApiKey; activeAiEngine = new OpenAiReportService(_sharedHttpClient, activeKey); }
+            else if (cleanProvider.Contains("Claude")) { activeKey = _currentSettings.ClaudeApiKey; activeAiEngine = new ClaudeReportService(_sharedHttpClient, activeKey); }
             else { activeKey = _currentSettings.GeminiApiKey; activeAiEngine = new GeminiReportService(_sharedHttpClient, activeKey); }
 
             if (string.IsNullOrWhiteSpace(activeKey))
             {
-                onCompleteOutput("ERROR: Missing API Key configuration details inside settings.");
+                onCompleteOutput("ERROR: Missing API Key inside configuration profiles.");
                 IsGenerating = false;
                 return false;
             }
@@ -338,7 +357,7 @@ namespace StudentReportGenerator.Services
             var request = new ReportRequest
             {
                 StudentName = name,
-                Subject = SelectedCurriculumTopic,
+                Subject = SanitizeControlOutput(SelectedCurriculumTopic),
                 WordCount = TargetWordCount,
                 RawNotes = notes,
                 SelectedFramework = SelectedFramework?.Instruction ?? string.Empty,
@@ -354,13 +373,13 @@ namespace StudentReportGenerator.Services
 
             if (response.IsSuccess)
             {
-                onCompleteOutput($"[{provider}]\n\n{response.GeneratedReport}");
+                onCompleteOutput(response.GeneratedReport);
 
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     SessionHistory.Insert(0, new SessionRecord
                     {
-                        StudentName = $"{request.StudentName} ({provider.Split(' ')[0]})",
+                        StudentName = $"{request.StudentName} ({cleanProvider.Split(' ')[0]})",
                         GeneratedReport = response.GeneratedReport,
                         Timestamp = DateTime.Now
                     });
@@ -372,19 +391,19 @@ namespace StudentReportGenerator.Services
                 _currentSettings.TotalTokensEstimated += (long)(words * 1.3);
                 _currentSettings.TotalReportsGenerated++;
 
-                if (provider.Contains("NVIDIA")) _currentSettings.NvidiaReportsCount++;
-                else if (provider.Contains("OpenAI")) _currentSettings.OpenAiReportsCount++;
-                else if (provider.Contains("Claude")) _currentSettings.ClaudeReportsCount++;
+                if (cleanProvider.Contains("NVIDIA")) _currentSettings.NvidiaReportsCount++;
+                else if (cleanProvider.Contains("OpenAI")) _currentSettings.OpenAiReportsCount++;
+                else if (cleanProvider.Contains("Claude")) _currentSettings.ClaudeReportsCount++;
                 else _currentSettings.GeminiReportsCount++;
 
                 SecureSettingsService.SaveSettings(_currentSettings);
                 UpdateDashboardMetricsDisplay();
-                StatusText = "Generation completed successfully!";
+                StatusText = "Ready.";
                 return true;
             }
 
-            onCompleteOutput($"Generation Engine Failure Error Details: {response.ErrorMessage}");
-            StatusText = "Generation task encountered a fault.";
+            onCompleteOutput($"API Error: {response.ErrorMessage}");
+            StatusText = "Generation failed.";
             return false;
         }
 
@@ -394,7 +413,7 @@ namespace StudentReportGenerator.Services
 
             IsBatchModeActive = true;
             IsCompareRightVisible = false;
-            GeneratedReportOutput = "Starting batch asynchronous process sequence execution context...\n";
+            GeneratedReportOutput = "Starting batch generation process...\n";
 
             var lines = BatchDataInput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             int successCount = 0;
@@ -408,7 +427,7 @@ namespace StudentReportGenerator.Services
                 {
                     if (token.IsCancellationRequested)
                     {
-                        GeneratedReportOutput += "\n\n⚠️ BATCH EXECUTIONS CANCELLED BY REQUEST INTERRUPT SYSTEM.";
+                        GeneratedReportOutput += "\n\n⚠️ BATCH CANCELLED BY USER.";
                         break;
                     }
 
@@ -425,11 +444,11 @@ namespace StudentReportGenerator.Services
                         await Task.Delay(1500, token);
                     }
                 }
-                StatusText = token.IsCancellationRequested ? $"Batch Stopped. {successCount} profiles processed." : $"Batch processing sequence complete! {successCount} reports written.";
+                StatusText = token.IsCancellationRequested ? $"Batch Stopped. {successCount} reports generated." : $"Batch complete! {successCount} reports written.";
             }
             catch (TaskCanceledException)
             {
-                StatusText = $"Batch Stopped. {successCount} profiles processed.";
+                StatusText = $"Batch Stopped. {successCount} reports generated.";
             }
             finally
             {
@@ -444,7 +463,7 @@ namespace StudentReportGenerator.Services
             if (_batchCancellationTokenSource != null && !_batchCancellationTokenSource.IsCancellationRequested)
             {
                 _batchCancellationTokenSource.Cancel();
-                StatusText = "Interrupt brake flag signaled. Stopping batch loops safely...";
+                StatusText = "Stopping batch loop generation...";
             }
         }
 
@@ -453,17 +472,15 @@ namespace StudentReportGenerator.Services
             if (string.IsNullOrWhiteSpace(CompareStudentName) || string.IsNullOrWhiteSpace(CompareNotes)) return;
 
             IsCompareRightVisible = true;
-            GeneratedReportOutput = $"Awaiting response buffer from provider layer 1 ({CompareProvider1})...\n";
-            CompareOutputRight = $"Awaiting response buffer from provider layer 2 ({CompareProvider2})...\n";
-            StatusText = "Running simultaneous multiple execution generation routines...";
+            GeneratedReportOutput = $"Awaiting {CompareProvider1}...\n";
+            CompareOutputRight = $"Awaiting {CompareProvider2}...\n";
+            StatusText = "Running simultaneous dual engine generation...";
 
             var task1 = ProcessSingleReportExecutionAsync(CompareStudentName, CompareNotes, CompareProvider1, out1 => GeneratedReportOutput = out1);
-
-            // Fix applied here: Now references 'CompareOutputRight' instead of mismatching property labels
             var task2 = ProcessSingleReportExecutionAsync(CompareStudentName, CompareNotes, CompareProvider2, out2 => CompareOutputRight = out2);
 
             await Task.WhenAll(task1, task2);
-            StatusText = "Model demonstration synthesis side-by-side array loaded.";
+            StatusText = "Comparison analysis completed.";
         }
 
         private async Task EmailReportAsync()
@@ -471,10 +488,10 @@ namespace StudentReportGenerator.Services
             if (string.IsNullOrWhiteSpace(GeneratedReportOutput) || string.IsNullOrWhiteSpace(ParentEmail)) return;
             if (string.IsNullOrWhiteSpace(_currentSettings.SmtpEmail) || string.IsNullOrWhiteSpace(_currentSettings.SmtpPassword)) return;
 
-            StatusText = "Sending encrypted communication package...";
+            StatusText = "Sending email to parent...";
             try
             {
-                string subject = $"Official Report Summary for {SelectedStudentName}";
+                string subject = $"Official Student Report for {SelectedStudentName}";
                 await EmailService.SendEmailAsync(ParentEmail, subject, GeneratedReportOutput,
                                                   _currentSettings.SmtpServer, _currentSettings.SmtpPort,
                                                   _currentSettings.SmtpEmail, _currentSettings.SmtpPassword);
@@ -482,14 +499,14 @@ namespace StudentReportGenerator.Services
             }
             catch (Exception ex)
             {
-                StatusText = $"Email integration exception: {ex.Message}";
+                StatusText = $"Email integration failure: {ex.Message}";
             }
         }
 
         private async Task PreviewToneAsync()
         {
             if (SelectedFramework == null) return;
-            StatusText = "Generating rapid prompt style alignment confirmation snippet...";
+            StatusText = "Generating brief tone framework sample snippet...";
 
             var request = new ReportRequest
             {
@@ -504,7 +521,7 @@ namespace StudentReportGenerator.Services
             };
 
             IAiService activeAiEngine;
-            string provider = _currentSettings.AiProvider;
+            string provider = SanitizeControlOutput(_currentSettings.AiProvider);
             string key = provider.Contains("NVIDIA") ? _currentSettings.NvidiaApiKey :
                          provider.Contains("OpenAI") ? _currentSettings.OpenAiApiKey :
                          provider.Contains("Claude") ? _currentSettings.ClaudeApiKey : _currentSettings.GeminiApiKey;
@@ -517,8 +534,8 @@ namespace StudentReportGenerator.Services
             var resp = await activeAiEngine.GenerateReportAsync(request);
             if (resp.IsSuccess)
             {
-                MessageBox.Show($"Tone Style Preview Sample ({SelectedFramework.Name}):\n\n\"{resp.GeneratedReport}\"", "Tone Framework Configuration Matrix Verification", MessageBoxButton.OK, MessageBoxImage.Information);
-                StatusText = "Tone sample verified successfully.";
+                MessageBox.Show($"Tone Preview Sample ({SelectedFramework.Name}):\n\n\"{resp.GeneratedReport}\"", "Tone Alignment Verification", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusText = "Tone style verified.";
             }
             else
             {
@@ -528,13 +545,14 @@ namespace StudentReportGenerator.Services
 
         private void SaveStudent()
         {
-            if (string.IsNullOrWhiteSpace(SelectedStudentName)) return;
-            var match = _studentDatabase.FirstOrDefault(s => s.FullName.Equals(SelectedStudentName, StringComparison.OrdinalIgnoreCase));
+            string cleanName = SanitizeControlOutput(SelectedStudentName);
+            if (string.IsNullOrWhiteSpace(cleanName)) return;
+            var match = _studentDatabase.FirstOrDefault(s => s.FullName.Equals(cleanName, StringComparison.OrdinalIgnoreCase));
             if (match == null)
             {
                 _studentDatabase.Add(new StudentProfile
                 {
-                    FullName = SelectedStudentName,
+                    FullName = cleanName,
                     ClassName = StudentClass,
                     ParentEmail = ParentEmail,
                     TargetGrade = TargetGrade,
@@ -550,12 +568,13 @@ namespace StudentReportGenerator.Services
             }
             StudentDatabaseService.SaveStudents(_studentDatabase);
             RefreshCollections();
-            StatusText = "Student database schema states synchronized.";
+            StatusText = "Student database profile saved.";
         }
 
         private void DeleteStudent()
         {
-            var match = _studentDatabase.FirstOrDefault(s => s.FullName.Equals(SelectedStudentName, StringComparison.OrdinalIgnoreCase));
+            string cleanName = SanitizeControlOutput(SelectedStudentName);
+            var match = _studentDatabase.FirstOrDefault(s => s.FullName.Equals(cleanName, StringComparison.OrdinalIgnoreCase));
             if (match != null)
             {
                 _studentDatabase.Remove(match);
@@ -563,7 +582,7 @@ namespace StudentReportGenerator.Services
                 StudentClass = ParentEmail = TargetGrade = SupportNeeds = string.Empty;
                 SelectedStudentName = string.Empty;
                 RefreshCollections();
-                StatusText = "Record erased from persistent cache data arrays.";
+                StatusText = "Record deleted from student profiles cache database.";
             }
         }
 
@@ -578,7 +597,7 @@ namespace StudentReportGenerator.Services
 
             SecureSettingsService.SaveSettings(_currentSettings);
             ApplyBrandingConfiguration();
-            StatusText = "Configurations written securely to disk payload structure.";
+            StatusText = "Configurations saved successfully.";
         }
 
         private void UnlockSettings()
@@ -586,11 +605,11 @@ namespace StudentReportGenerator.Services
             if (SettingsUnlockPassword == _currentSettings.MasterPassword || string.IsNullOrEmpty(_currentSettings.MasterPassword))
             {
                 IsSettingsUnlocked = true;
-                StatusText = "Security vault open. Advanced parameters unlocked.";
+                StatusText = "Security parameters vault unlocked.";
             }
             else
             {
-                MessageBox.Show("Invalid administrative security key.", "Vault Guard Intercept Exception", MessageBoxButton.OK, MessageBoxImage.Hand);
+                MessageBox.Show("Incorrect validation control shield password key.", "Security Exception", MessageBoxButton.OK, MessageBoxImage.Hand);
                 SettingsUnlockPassword = string.Empty;
             }
         }
@@ -636,7 +655,7 @@ namespace StudentReportGenerator.Services
             if (!string.IsNullOrWhiteSpace(GeneratedReportOutput))
             {
                 Clipboard.SetText(GeneratedReportOutput);
-                StatusText = "Report payload stored safely in host OS clipboard array.";
+                StatusText = "Report stored to clipboard context.";
             }
         }
 
@@ -646,8 +665,8 @@ namespace StudentReportGenerator.Services
             var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word Document (*.docx)|*.docx", FileName = GetSmartFileName(".docx") };
             if (dialog.ShowDialog() == true)
             {
-                WordExportService.ExportSingle(dialog.FileName, SelectedStudentName, GeneratedReportOutput);
-                StatusText = "Native OpenXml document written safely.";
+                WordExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput);
+                StatusText = "Word document saved.";
             }
         }
 
@@ -657,8 +676,8 @@ namespace StudentReportGenerator.Services
             var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "PDF Document (*.pdf)|*.pdf", FileName = GetSmartFileName(".pdf") };
             if (dialog.ShowDialog() == true)
             {
-                PdfExportService.ExportSingle(dialog.FileName, SelectedStudentName, GeneratedReportOutput);
-                StatusText = "Multi-page bounded vector canvas file compiled.";
+                PdfExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput);
+                StatusText = "PDF document compiled.";
             }
         }
 
@@ -669,7 +688,7 @@ namespace StudentReportGenerator.Services
             if (dialog.ShowDialog() == true)
             {
                 WordExportService.ExportBatch(dialog.FileName, SessionHistory.ToList());
-                StatusText = "Bulk documents aggregated cleanly inside target file array framework.";
+                StatusText = "Bulk class document portfolio exported successfully.";
             }
         }
 
@@ -693,7 +712,7 @@ namespace StudentReportGenerator.Services
                             BatchDataInput += $"{parts[0]} | {parts[1]}\n";
                         }
                     }
-                    StatusText = "Spreadsheet parameters extracted safely.";
+                    StatusText = "CSV text parameters parsed successfully.";
                 }
                 catch (Exception ex) { MessageBox.Show($"Parsing fault: {ex.Message}"); }
             }
@@ -727,7 +746,7 @@ namespace StudentReportGenerator.Services
                     }
                     StudentDatabaseService.SaveStudents(_studentDatabase);
                     RefreshCollections();
-                    StatusText = $"Database expanded. Ingested {addedCount} new student records.";
+                    StatusText = $"Ingested {addedCount} records to student cache roster.";
                 }
                 catch (Exception ex) { MessageBox.Show($"Roster error: {ex.Message}"); }
             }
@@ -735,23 +754,23 @@ namespace StudentReportGenerator.Services
 
         private void FilterHistoryByStudent()
         {
-            string target = SelectedStudentName.Trim();
+            string target = SanitizeControlOutput(SelectedStudentName);
             if (string.IsNullOrWhiteSpace(target)) return;
             var matchingHistory = HistoryDatabaseService.LoadHistory()
                 .Where(r => r.StudentName.Contains(target, StringComparison.OrdinalIgnoreCase)).ToList();
             SessionHistory = new ObservableCollection<SessionRecord>(matchingHistory);
-            StatusText = $"Timeline filtering active for student tracking profile: {target}";
+            StatusText = $"Filtering layout tracking logs for student: {target}";
         }
 
         private void ClearHistoryFilter()
         {
             SessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>();
-            StatusText = "History logs array context resetting back to global visualization layout.";
+            StatusText = "Reset history timeline overview filter.";
         }
 
         private void SaveCurriculumTopic()
         {
-            string topic = SelectedCurriculumTopic.Trim();
+            string topic = SanitizeControlOutput(SelectedCurriculumTopic);
             if (string.IsNullOrWhiteSpace(topic)) return;
             if (!_currentSettings.CurriculumTopics.Any(t => t.Equals(topic, StringComparison.OrdinalIgnoreCase)))
             {
@@ -765,7 +784,7 @@ namespace StudentReportGenerator.Services
 
         private void DeleteCurriculumTopic()
         {
-            string topic = SelectedCurriculumTopic.Trim();
+            string topic = SanitizeControlOutput(SelectedCurriculumTopic);
             if (string.IsNullOrWhiteSpace(topic)) return;
             if (_currentSettings.CurriculumTopics.Contains(topic, StringComparer.OrdinalIgnoreCase))
             {
@@ -791,23 +810,34 @@ namespace StudentReportGenerator.Services
         private void CopyHistoryPreviewToCompareBox()
         {
             IsCompareRightVisible = true;
+            if (SelectedHistoryItem != null)
+            {
+                CompareOutputRight = SelectedHistoryItem.GeneratedReport;
+            }
+            StatusText = "Ready to analyze historical payload verification values.";
         }
 
         private string GetSmartFileName(string ext)
         {
-            string sName = string.IsNullOrWhiteSpace(SelectedStudentName) ? "Student" : SelectedStudentName.Replace(" ", "");
-            string topic = string.IsNullOrWhiteSpace(SelectedCurriculumTopic) ? "Report" : SelectedCurriculumTopic.Replace(" ", "");
+            string sName = string.IsNullOrWhiteSpace(SelectedStudentName) ? "Student" : SanitizeControlOutput(SelectedStudentName).Replace(" ", "");
+            string topic = string.IsNullOrWhiteSpace(SelectedCurriculumTopic) ? "Report" : SanitizeControlOutput(SelectedCurriculumTopic).Replace(" ", "");
             string date = DateTime.Now.ToString("yyyyMMdd");
             string combined = $"{sName}_{topic}_{date}{ext}";
             return string.Join("_", combined.Split(Path.GetInvalidFileNameChars()));
         }
         #endregion
 
-        #region Standard Data Property Bindings Data Encapsulation Wrappers
+        #region Standard Data Property Bindings Wrappers
         public ObservableCollection<SessionRecord> SessionHistory { get => _sessionHistory; set => SetProperty(ref _sessionHistory, value); }
         public ObservableCollection<string> StudentNames { get => _studentNames; set => SetProperty(ref _studentNames, value); }
         public List<ReportFramework> CustomFrameworks => _currentSettings.CustomFrameworks;
         public List<string> CurriculumTopics => _currentSettings.CurriculumTopics;
+
+        public SessionRecord? SelectedHistoryItem
+        {
+            get => _selectedHistoryItem;
+            set => SetProperty(ref _selectedHistoryItem, value);
+        }
 
         public int SelectedNavigationIndex
         {
@@ -827,11 +857,12 @@ namespace StudentReportGenerator.Services
             get => _currentSettings.AiProvider;
             set
             {
-                if (_currentSettings.AiProvider != value)
+                string cleanValue = SanitizeControlOutput(value);
+                if (_currentSettings.AiProvider != cleanValue)
                 {
-                    _currentSettings.AiProvider = value;
+                    _currentSettings.AiProvider = cleanValue;
                     OnPropertyChanged();
-                    EvaluateAiProviderOptions(value);
+                    EvaluateAiProviderOptions(cleanValue);
                 }
             }
         }
@@ -841,13 +872,14 @@ namespace StudentReportGenerator.Services
             get => _selectedModelTier;
             set
             {
-                if (SetProperty(ref _selectedModelTier, value))
+                string cleanValue = SanitizeControlOutput(value);
+                if (SetProperty(ref _selectedModelTier, cleanValue))
                 {
-                    string provider = _currentSettings.AiProvider;
-                    if (provider.Contains("NVIDIA")) _currentSettings.NvidiaModelTier = value;
-                    else if (provider.Contains("Gemini")) _currentSettings.GeminiModelTier = value;
-                    else if (provider.Contains("OpenAI")) _currentSettings.OpenAiModelTier = value;
-                    else if (provider.Contains("Claude")) _currentSettings.ClaudeModelTier = value;
+                    string provider = SanitizeControlOutput(_currentSettings.AiProvider);
+                    if (provider.Contains("NVIDIA")) _currentSettings.NvidiaModelTier = cleanValue;
+                    else if (provider.Contains("Gemini")) _currentSettings.GeminiModelTier = cleanValue;
+                    else if (provider.Contains("OpenAI")) _currentSettings.OpenAiModelTier = cleanValue;
+                    else if (provider.Contains("Claude")) _currentSettings.ClaudeModelTier = cleanValue;
                     SecureSettingsService.SaveSettings(_currentSettings);
                 }
             }
@@ -860,7 +892,7 @@ namespace StudentReportGenerator.Services
             {
                 if (SetProperty(ref _dynamicApiKeyPassword, value))
                 {
-                    string provider = _currentSettings.AiProvider;
+                    string provider = SanitizeControlOutput(_currentSettings.AiProvider);
                     if (provider.Contains("NVIDIA")) _currentSettings.NvidiaApiKey = value;
                     else if (provider.Contains("Gemini")) _currentSettings.GeminiApiKey = value;
                     else if (provider.Contains("OpenAI")) _currentSettings.OpenAiApiKey = value;
@@ -896,9 +928,10 @@ namespace StudentReportGenerator.Services
             get => _selectedStudentName;
             set
             {
-                if (SetProperty(ref _selectedStudentName, value))
+                string cleanValue = SanitizeControlOutput(value);
+                if (SetProperty(ref _selectedStudentName, cleanValue))
                 {
-                    var match = _studentDatabase.FirstOrDefault(x => x.FullName == value);
+                    var match = _studentDatabase.FirstOrDefault(x => x.FullName == cleanValue);
                     if (match != null)
                     {
                         StudentClass = match.ClassName;
@@ -932,10 +965,7 @@ namespace StudentReportGenerator.Services
         public string CompareNotes { get => _compareNotes; set => SetProperty(ref _compareNotes, value); }
         public string CompareProvider1 { get => _compareProvider1; set => SetProperty(ref _compareProvider1, value); }
         public string CompareProvider2 { get => _compareProvider2; set => SetProperty(ref _compareProvider2, value); }
-
-        // Naming configuration update explicitly wired up to properties
         public string CompareOutputRight { get => _compareOutputRight; set => SetProperty(ref _compareOutputRight, value); }
-
         public bool IsCompareRightVisible { get => _isCompareRightVisible; set => SetProperty(ref _isCompareRightVisible, value); }
         public string SettingsSchoolName { get => _settingsSchoolName; set => SetProperty(ref _settingsSchoolName, value); }
         public string SettingsTeacherName { get => _settingsTeacherName; set => SetProperty(ref _settingsTeacherName, value); }
@@ -965,12 +995,5 @@ namespace StudentReportGenerator.Services
         public string OpenaiCountDisplay { get => _openaiCountDisplay; set => SetProperty(ref _openaiCountDisplay, value); }
         public string ClaudeCountDisplay { get => _claudeCountDisplay; set => SetProperty(ref _claudeCountDisplay, value); }
         #endregion
-    }
-
-    public class ComboBoxItemWrapper
-    {
-        public string Content { get; set; } = string.Empty;
-        public string Tag { get; set; } = string.Empty;
-        public override string ToString() => Content;
     }
 }
