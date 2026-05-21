@@ -32,7 +32,7 @@ namespace StudentReportGenerator.Services
                     model = activeModel,
                     messages = new[]
                     {
-                        new { role = "system", content = "You are a professional school teacher writing student reports." },
+                        new { role = "system", content = "You are a professional school teacher writing end-of-term update reports directly to parents about their child." },
                         new { role = "user", content = prompt }
                     },
                     temperature = 0.7
@@ -59,27 +59,26 @@ namespace StudentReportGenerator.Services
                         }
                     }
 
-                    return new ReportResponse { IsSuccess = false, ErrorMessage = $"OpenAI API Error: {response.StatusCode} - {responseString}" };
+                    return new ReportResponse { IsSuccess = false, ErrorMessage = $"OpenAI Error: {response.StatusCode}" };
                 }
             }
             catch (Exception ex)
             {
-                return new ReportResponse { IsSuccess = false, ErrorMessage = $"Local Error: {ex.Message}" };
+                return new ReportResponse { IsSuccess = false, ErrorMessage = ex.Message };
             }
         }
 
         private string BuildPrompt(ReportRequest request)
         {
-            return $"You are a professional school teacher writing student reports.\n" +
+            return $"Write an academic report card update TO the parents of the student. " +
+                   $"CRITICAL PRONOUN RULE: Address the parent directly about their child. Never say 'You' to mean the student. Use phrasing like 'Your child, {request.StudentName}, has...', 'In class, {request.StudentName} demonstrates...'.\n\n" +
                    $"Student Name: {request.StudentName}\n" +
                    $"Subject: {request.Subject}\n" +
-                   $"Target/Expected Grade: {request.TargetGrade}\n" +
-                   $"Learning Support Needs / EHCP: {request.SupportNeeds}\n" +
-                   $"Framework: {request.SelectedFramework}\n" +
-                   $"Notes: {request.RawNotes}\n\n" +
-                   $"Write a ~{request.WordCount} word report. " +
-                   $"Address their target grade and accommodate any mentioned learning needs in your tone/content. " +
-                   $"Sign off as '{request.TeacherSignoff}' from '{request.SchoolName}'.";
+                   $"Target Grade: {request.TargetGrade}\n" +
+                   $"Learning Support/SEN: {request.SupportNeeds}\n" +
+                   $"Tone Template: {request.SelectedFramework}\n" +
+                   $"Teacher Notes: {request.RawNotes}\n\n" +
+                   $"Write a ~{request.WordCount} word update report. Sign off as '{request.TeacherSignoff}' from '{request.SchoolName}'.";
         }
     }
 }

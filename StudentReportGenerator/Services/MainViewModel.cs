@@ -119,7 +119,7 @@ namespace StudentReportGenerator.Services
         public ICommand SaveWordCommand { get; }
         public ICommand SavePdfCommand { get; }
         public ICommand EmailReportCommand { get; }
-        public ICommand ImportBatchCsvCommand { get; }
+        public ICommand ImportBatchCsvCommand { get; set; }
         public ICommand GenerateBatchCommand { get; }
         public ICommand CancelBatchCommand { get; }
         public ICommand ExportBatchWordCommand { get; }
@@ -379,7 +379,7 @@ namespace StudentReportGenerator.Services
                 {
                     SessionHistory.Insert(0, new SessionRecord
                     {
-                        StudentName = $"{request.StudentName} ({cleanProvider.Split(' ')[0]})",
+                        StudentName = request.StudentName,
                         GeneratedReport = response.GeneratedReport,
                         Timestamp = DateTime.Now
                     });
@@ -485,8 +485,19 @@ namespace StudentReportGenerator.Services
 
         private async Task EmailReportAsync()
         {
-            if (string.IsNullOrWhiteSpace(GeneratedReportOutput) || string.IsNullOrWhiteSpace(ParentEmail)) return;
-            if (string.IsNullOrWhiteSpace(_currentSettings.SmtpEmail) || string.IsNullOrWhiteSpace(_currentSettings.SmtpPassword)) return;
+            // Operational validation fix: Explicit validation handles unconfigured mail configurations gracefully
+            if (string.IsNullOrWhiteSpace(_currentSettings.SmtpEmail) || string.IsNullOrWhiteSpace(_currentSettings.SmtpPassword))
+            {
+                StatusText = "Email failed: Set up SMTP details in Profile Settings.";
+                MessageBox.Show("SMTP Outbox details are missing. Please go to Profile Settings to input your school email credentials.", "Setup Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(GeneratedReportOutput) || string.IsNullOrWhiteSpace(ParentEmail))
+            {
+                StatusText = "Email failed: Missing text or parent address.";
+                return;
+            }
 
             StatusText = "Sending email to parent...";
             try
@@ -499,7 +510,7 @@ namespace StudentReportGenerator.Services
             }
             catch (Exception ex)
             {
-                StatusText = $"Email integration failure: {ex.Message}";
+                StatusText = $"Email failed: {ex.Message}";
             }
         }
 
@@ -568,7 +579,7 @@ namespace StudentReportGenerator.Services
             }
             StudentDatabaseService.SaveStudents(_studentDatabase);
             RefreshCollections();
-            StatusText = "Student database profile saved.";
+            StatusText = "Student profile saved.";
         }
 
         private void DeleteStudent()
@@ -759,7 +770,7 @@ namespace StudentReportGenerator.Services
             var matchingHistory = HistoryDatabaseService.LoadHistory()
                 .Where(r => r.StudentName.Contains(target, StringComparison.OrdinalIgnoreCase)).ToList();
             SessionHistory = new ObservableCollection<SessionRecord>(matchingHistory);
-            StatusText = $"Filtering layout tracking logs for student: {target}";
+            StatusText = $"Filtering history logs for: {target}";
         }
 
         private void ClearHistoryFilter()
@@ -814,7 +825,7 @@ namespace StudentReportGenerator.Services
             {
                 CompareOutputRight = SelectedHistoryItem.GeneratedReport;
             }
-            StatusText = "Ready to analyze historical payload verification values.";
+            StatusText = "Ready to analyze historical comparison values.";
         }
 
         private string GetSmartFileName(string ext)

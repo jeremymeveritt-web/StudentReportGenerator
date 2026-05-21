@@ -25,7 +25,6 @@ namespace StudentReportGenerator.Services
             {
                 string endpoint = "https://integrate.api.nvidia.com/v1/chat/completions";
                 string activeModel = string.IsNullOrWhiteSpace(request.SelectedModel) ? "meta/llama-3.1-405b-instruct" : request.SelectedModel;
-
                 string prompt = BuildPrompt(request);
 
                 var payload = new
@@ -62,27 +61,26 @@ namespace StudentReportGenerator.Services
                         }
                     }
 
-                    return new ReportResponse { IsSuccess = false, ErrorMessage = $"NVIDIA API Error: {response.StatusCode} - {responseString}" };
+                    return new ReportResponse { IsSuccess = false, ErrorMessage = $"NVIDIA Error: {response.StatusCode}" };
                 }
             }
             catch (Exception ex)
             {
-                return new ReportResponse { IsSuccess = false, ErrorMessage = $"Local Error: {ex.Message}" };
+                return new ReportResponse { IsSuccess = false, ErrorMessage = ex.Message };
             }
         }
 
         private string BuildPrompt(ReportRequest request)
         {
-            return $"You are a professional school teacher writing student reports.\n" +
+            return $"You are a teacher writing an academic update directly TO the parents of a student. " +
+                   $"MANDATORY VIEWPOINT: Address the parent directly regarding their child. Do not address the student. Use wording such as 'Your child, {request.StudentName}, has made progress...', 'In class, {request.StudentName} is...'.\n\n" +
                    $"Student Name: {request.StudentName}\n" +
                    $"Subject: {request.Subject}\n" +
-                   $"Target/Expected Grade: {request.TargetGrade}\n" +
-                   $"Learning Support Needs / EHCP: {request.SupportNeeds}\n" +
-                   $"Framework: {request.SelectedFramework}\n" +
-                   $"Notes: {request.RawNotes}\n\n" +
-                   $"Write a ~{request.WordCount} word report. " +
-                   $"Address their target grade and accommodate any mentioned learning needs in your tone/content. " +
-                   $"Sign off as '{request.TeacherSignoff}' from '{request.SchoolName}'.";
+                   $"Target Grade: {request.TargetGrade}\n" +
+                   $"Support Needs/SEN: {request.SupportNeeds}\n" +
+                   $"Tone Template: {request.SelectedFramework}\n" +
+                   $"Teacher Notes: {request.RawNotes}\n\n" +
+                   $"Write a ~{request.WordCount} word update report. Sign off as '{request.TeacherSignoff}' from '{request.SchoolName}'.";
         }
     }
 }
