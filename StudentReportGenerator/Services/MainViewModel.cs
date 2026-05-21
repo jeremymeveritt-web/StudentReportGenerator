@@ -24,7 +24,8 @@ namespace StudentReportGenerator.Services
 
     public class MainViewModel : ViewModelBase
     {
-        private static readonly HttpClient _sharedHttpClient = new HttpClient();
+        // Commercial Hardening: Establish explicit network fail-safe timeouts (30 seconds)
+        private static readonly HttpClient _sharedHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         private CancellationTokenSource? _batchCancellationTokenSource;
 
         // Core State Properties
@@ -303,7 +304,24 @@ namespace StudentReportGenerator.Services
         #region MVVM Logic Actions Implementation
         private async Task GenerateSingleReportAsync()
         {
+            // Retail Hardening: Form Input Fields Empty Space Intercept Guard
+            string cleanStudentName = SanitizeControlOutput(SelectedStudentName);
             string cleanTopic = SanitizeControlOutput(SelectedCurriculumTopic);
+
+            if (string.IsNullOrWhiteSpace(cleanStudentName))
+            {
+                StatusText = "Error: Please input or select a Student Name.";
+                MessageBox.Show("The student's name field cannot be empty.", "Input Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(cleanTopic))
+            {
+                StatusText = "Error: Please input or select a Curriculum Topic.";
+                MessageBox.Show("A curriculum topic is required to guide report context formatting.", "Input Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             string compiledNotes = $"Curriculum Topic Studied: {cleanTopic}\n\n";
             compiledNotes += "Attendance & Timekeeping: ";
             if (IsTimekeepingPerfect) compiledNotes += "100% attendance.\n";
@@ -322,7 +340,7 @@ namespace StudentReportGenerator.Services
             IsCompareRightVisible = false;
             StatusText = "Generating report...";
 
-            await ProcessSingleReportExecutionAsync(SanitizeControlOutput(SelectedStudentName), compiledNotes, _currentSettings.AiProvider, report => GeneratedReportOutput = report);
+            await ProcessSingleReportExecutionAsync(cleanStudentName, compiledNotes, _currentSettings.AiProvider, report => GeneratedReportOutput = report);
         }
 
         private async Task<bool> ProcessSingleReportExecutionAsync(string name, string notes, string provider, Action<string> onCompleteOutput)
@@ -340,7 +358,7 @@ namespace StudentReportGenerator.Services
 
             if (string.IsNullOrWhiteSpace(activeKey))
             {
-                onCompleteOutput("ERROR: Missing API Key inside configuration profiles.");
+                onCompleteOutput("ERROR: Missing API Key inside configurations. Please navigate to AI Engine Properties to input a key.");
                 IsGenerating = false;
                 return false;
             }
@@ -368,52 +386,74 @@ namespace StudentReportGenerator.Services
                 SupportNeeds = dbSupportNeeds
             };
 
-            var response = await activeAiEngine.GenerateReportAsync(request);
-            IsGenerating = false;
-
-            if (response.IsSuccess)
+            try
             {
-                onCompleteOutput(response.GeneratedReport);
+                var response = await activeAiEngine.GenerateReportAsync(request);
+                IsGenerating = false;
 
-                Application.Current.Dispatcher.Invoke(() =>
+                if (response.IsSuccess)
                 {
-                    SessionHistory.Insert(0, new SessionRecord
+                    onCompleteOutput(response.GeneratedReport);
+
+                    Application.Current.Dispatcher.Invoke(() =>
                     {
-                        StudentName = request.StudentName,
-                        GeneratedReport = response.GeneratedReport,
-                        Timestamp = DateTime.Now
+                        SessionHistory.Insert(0, new SessionRecord
+                        {
+                            StudentName = request.StudentName,
+                            GeneratedReport = response.GeneratedReport,
+                            Timestamp = DateTime.Now
+                        });
                     });
-                });
 
-                HistoryDatabaseService.SaveHistory(SessionHistory);
+                    HistoryDatabaseService.SaveHistory(SessionHistory);
 
-                int words = response.GeneratedReport.Split(' ').Length;
-                _currentSettings.TotalTokensEstimated += (long)(words * 1.3);
-                _currentSettings.TotalReportsGenerated++;
+                    int words = response.GeneratedReport.Split(' ').Length;
+                    _currentSettings.TotalTokensEstimated += (long)(words * 1.3);
+                    _currentSettings.TotalReportsGenerated++;
 
-                if (cleanProvider.Contains("NVIDIA")) _currentSettings.NvidiaReportsCount++;
-                else if (cleanProvider.Contains("OpenAI")) _currentSettings.OpenAiReportsCount++;
-                else if (cleanProvider.Contains("Claude")) _currentSettings.ClaudeReportsCount++;
-                else _currentSettings.GeminiReportsCount++;
+                    if (cleanProvider.Contains("NVIDIA")) _currentSettings.NvidiaReportsCount++;
+                    else if (cleanProvider.Contains("OpenAI")) _currentSettings.OpenAiReportsCount++;
+                    else if (cleanProvider.Contains("Claude")) _currentSettings.ClaudeReportsCount++;
+                    else _currentSettings.GeminiReportsCount++;
 
-                SecureSettingsService.SaveSettings(_currentSettings);
-                UpdateDashboardMetricsDisplay();
-                StatusText = "Ready.";
-                return true;
+                    SecureSettingsService.SaveSettings(_currentSettings);
+                    UpdateDashboardMetricsDisplay();
+                    StatusText = "Ready.";
+                    return true;
+                }
+
+                onCompleteOutput($"API Error: {response.ErrorMessage}");
+                StatusText = "Generation failed.";
+                return false;
             }
-
-            onCompleteOutput($"API Error: {response.ErrorMessage}");
-            StatusText = "Generation failed.";
-            return false;
+            // Retail Hardening: Intercept Request Task Cancellation / Sockets Timeout Constraints
+            catch (TaskCanceledException)
+            {
+                IsGenerating = false;
+                onCompleteOutput("CONNECTION ERROR: The request timed out. Please verify your internet connection or check if the selected AI provider service is down.");
+                StatusText = "Connection timed out.";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                IsGenerating = false;
+                onCompleteOutput($"SYSTEM ERROR: An unhandled connection error occurred: {ex.Message}");
+                StatusText = "Error encountered.";
+                return false;
+            }
         }
 
         private async Task GenerateBatchAsync()
         {
-            if (string.IsNullOrWhiteSpace(BatchDataInput)) return;
+            if (string.IsNullOrWhiteSpace(BatchDataInput))
+            {
+                MessageBox.Show("Please input or paste roster elements inside the text panel before running batch automation.", "Roster Empty", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
 
             IsBatchModeActive = true;
             IsCompareRightVisible = false;
-            GeneratedReportOutput = "Starting batch generation process...\n";
+            GeneratedReportOutput = "Starting batch generation sequence workflow...\n";
 
             var lines = BatchDataInput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             int successCount = 0;
@@ -427,28 +467,42 @@ namespace StudentReportGenerator.Services
                 {
                     if (token.IsCancellationRequested)
                     {
-                        GeneratedReportOutput += "\n\n⚠️ BATCH CANCELLED BY USER.";
+                        GeneratedReportOutput += "\n\n⚠️ BATCH PROCESS CANCELED BY TEACHER OVERRIDE.";
                         break;
                     }
 
+                    // Retail Hardening: Validation Guard catches lines lacking delimiter formatting tokens
+                    if (!lines[i].Contains("|"))
+                    {
+                        GeneratedReportOutput += $"\n[Row {i + 1} Skipped]: Error - Missing pipeline divider character formatting alignment token ('|').";
+                        continue;
+                    }
+
                     var parts = lines[i].Split('|');
-                    if (parts.Length < 2) continue;
+                    string studentNameClean = parts[0].Trim();
+                    string studentNotesClean = parts[1].Trim();
 
-                    StatusText = $"Generating report for {parts[0].Trim()} ({i + 1} of {lines.Length})...";
+                    if (string.IsNullOrWhiteSpace(studentNameClean))
+                    {
+                        GeneratedReportOutput += $"\n[Row {i + 1} Skipped]: Error - Student reference identifier name string is unpopulated.";
+                        continue;
+                    }
 
-                    bool success = await ProcessSingleReportExecutionAsync(parts[0].Trim(), parts[1].Trim(), _currentSettings.AiProvider, report => GeneratedReportOutput = report);
+                    StatusText = $"Processing report {i + 1} of {lines.Length} ({studentNameClean})...";
+
+                    bool success = await ProcessSingleReportExecutionAsync(studentNameClean, studentNotesClean, _currentSettings.AiProvider, report => GeneratedReportOutput = report);
                     if (success) successCount++;
 
                     if (i < lines.Length - 1 && !token.IsCancellationRequested)
                     {
-                        await Task.Delay(1500, token);
+                        await Task.Delay(1500, token); // Polite delay pacing rule to respect downstream token limits
                     }
                 }
-                StatusText = token.IsCancellationRequested ? $"Batch Stopped. {successCount} reports generated." : $"Batch complete! {successCount} reports written.";
+                StatusText = token.IsCancellationRequested ? $"Batch Stopped. {successCount} reports written." : $"Batch complete! {successCount} student profiles updated.";
             }
             catch (TaskCanceledException)
             {
-                StatusText = $"Batch Stopped. {successCount} reports generated.";
+                StatusText = $"Batch Stopped. {successCount} reports written.";
             }
             finally
             {
@@ -463,69 +517,80 @@ namespace StudentReportGenerator.Services
             if (_batchCancellationTokenSource != null && !_batchCancellationTokenSource.IsCancellationRequested)
             {
                 _batchCancellationTokenSource.Cancel();
-                StatusText = "Stopping batch loop generation...";
+                StatusText = "Halt requested. Shutting down active queues...";
             }
         }
 
         private async Task RunSideBySideComparisonAsync()
         {
-            if (string.IsNullOrWhiteSpace(CompareStudentName) || string.IsNullOrWhiteSpace(CompareNotes)) return;
+            if (string.IsNullOrWhiteSpace(CompareStudentName) || string.IsNullOrWhiteSpace(CompareNotes))
+            {
+                MessageBox.Show("Please complete all comparison text attributes fields before initiating cross engine matrix analysis metrics.", "Form Incomplete", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
 
             IsCompareRightVisible = true;
-            GeneratedReportOutput = $"Awaiting {CompareProvider1}...\n";
-            CompareOutputRight = $"Awaiting {CompareProvider2}...\n";
-            StatusText = "Running simultaneous dual engine generation...";
+            GeneratedReportOutput = $"Querying model channel 1 ({CompareProvider1})...\n";
+            CompareOutputRight = $"Querying model channel 2 ({CompareProvider2})...\n";
+            StatusText = "Running side-by-side comparative diagnostics execution...";
 
             var task1 = ProcessSingleReportExecutionAsync(CompareStudentName, CompareNotes, CompareProvider1, out1 => GeneratedReportOutput = out1);
             var task2 = ProcessSingleReportExecutionAsync(CompareStudentName, CompareNotes, CompareProvider2, out2 => CompareOutputRight = out2);
 
             await Task.WhenAll(task1, task2);
-            StatusText = "Comparison analysis completed.";
+            StatusText = "Comparative lab processing sequences finished.";
         }
 
         private async Task EmailReportAsync()
         {
-            // Operational validation fix: Explicit validation handles unconfigured mail configurations gracefully
             if (string.IsNullOrWhiteSpace(_currentSettings.SmtpEmail) || string.IsNullOrWhiteSpace(_currentSettings.SmtpPassword))
             {
-                StatusText = "Email failed: Set up SMTP details in Profile Settings.";
-                MessageBox.Show("SMTP Outbox details are missing. Please go to Profile Settings to input your school email credentials.", "Setup Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
+                StatusText = "Email failed: Missing profile outbox configurations credentials.";
+                MessageBox.Show("Please configure your institutional provider SMTP outbox details inside Profile Settings before attempting parent dispatch routes.", "Configuration Profile Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(GeneratedReportOutput) || string.IsNullOrWhiteSpace(ParentEmail))
+            if (string.IsNullOrWhiteSpace(GeneratedReportOutput))
             {
-                StatusText = "Email failed: Missing text or parent address.";
+                MessageBox.Show("The report document workspace output cache is currently empty. Please construct a valid document card payload string first.", "Payload Blank", MessageBoxButton.OK, MessageBoxImage.Asterisk);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(ParentEmail) || !ParentEmail.Contains("@"))
+            {
+                MessageBox.Show("Please input a valid structured parent email layout node location string target syntax schema pattern.", "Invalid Address Data", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
             StatusText = "Sending email to parent...";
             try
             {
-                string subject = $"Official Student Report for {SelectedStudentName}";
+                string subject = $"Official Student Performance Summary Report Card";
                 await EmailService.SendEmailAsync(ParentEmail, subject, GeneratedReportOutput,
                                                   _currentSettings.SmtpServer, _currentSettings.SmtpPort,
                                                   _currentSettings.SmtpEmail, _currentSettings.SmtpPassword);
                 StatusText = "Email sent successfully!";
+                MessageBox.Show($"The generated report update has been sent directly to target mailbox node: {ParentEmail}", "Dispatch Success", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
                 StatusText = $"Email failed: {ex.Message}";
+                MessageBox.Show($"An exception was thrown by the outbox exchange server during delivery pipelines routing tracks:\n\n{ex.Message}", "Delivery Exception Fault", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         private async Task PreviewToneAsync()
         {
             if (SelectedFramework == null) return;
-            StatusText = "Generating brief tone framework sample snippet...";
+            StatusText = "Generating brief tone sample snippet...";
 
             var request = new ReportRequest
             {
-                StudentName = "Student",
-                Subject = "General",
+                StudentName = "Student Name",
+                Subject = "General Topic",
                 WordCount = 30,
                 RawNotes = "Student did a good job this term.",
-                SelectedFramework = SelectedFramework.Instruction + " IMPORTANT: Write exactly ONE sentence demonstrating this tone.",
+                SelectedFramework = SelectedFramework.Instruction + " IMPORTANT: Write exactly ONE sentence demonstrating this tone framework style alignment signature.",
                 SchoolName = _currentSettings.SchoolName,
                 TeacherSignoff = _currentSettings.TeacherSignoff,
                 SelectedModel = SelectedModelTier
@@ -545,12 +610,12 @@ namespace StudentReportGenerator.Services
             var resp = await activeAiEngine.GenerateReportAsync(request);
             if (resp.IsSuccess)
             {
-                MessageBox.Show($"Tone Preview Sample ({SelectedFramework.Name}):\n\n\"{resp.GeneratedReport}\"", "Tone Alignment Verification", MessageBoxButton.OK, MessageBoxImage.Information);
-                StatusText = "Tone style verified.";
+                MessageBox.Show($"Tone Style Preview Alignment Verification snapshot:\n\n\"{resp.GeneratedReport}\"", "Template Framework Verified", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusText = "Tone framework metrics verified.";
             }
             else
             {
-                StatusText = "Failed to pull tone validation snapshot.";
+                StatusText = "Failed to pull alignment confirmation snippet.";
             }
         }
 
@@ -593,7 +658,7 @@ namespace StudentReportGenerator.Services
                 StudentClass = ParentEmail = TargetGrade = SupportNeeds = string.Empty;
                 SelectedStudentName = string.Empty;
                 RefreshCollections();
-                StatusText = "Record deleted from student profiles cache database.";
+                StatusText = "Record deleted from persistent profiles cache data registry.";
             }
         }
 
@@ -616,11 +681,11 @@ namespace StudentReportGenerator.Services
             if (SettingsUnlockPassword == _currentSettings.MasterPassword || string.IsNullOrEmpty(_currentSettings.MasterPassword))
             {
                 IsSettingsUnlocked = true;
-                StatusText = "Security parameters vault unlocked.";
+                StatusText = "Security credentials cleared. Configurations unlocked.";
             }
             else
             {
-                MessageBox.Show("Incorrect validation control shield password key.", "Security Exception", MessageBoxButton.OK, MessageBoxImage.Hand);
+                MessageBox.Show("Invalid password identity credential. Operational lock remains engaged.", "Shield Access Notice Exception", MessageBoxButton.OK, MessageBoxImage.Hand);
                 SettingsUnlockPassword = string.Empty;
             }
         }
@@ -666,7 +731,7 @@ namespace StudentReportGenerator.Services
             if (!string.IsNullOrWhiteSpace(GeneratedReportOutput))
             {
                 Clipboard.SetText(GeneratedReportOutput);
-                StatusText = "Report stored to clipboard context.";
+                StatusText = "Report copied to clipboard.";
             }
         }
 
@@ -699,7 +764,7 @@ namespace StudentReportGenerator.Services
             if (dialog.ShowDialog() == true)
             {
                 WordExportService.ExportBatch(dialog.FileName, SessionHistory.ToList());
-                StatusText = "Bulk class document portfolio exported successfully.";
+                StatusText = "Bulk class portfolio document written successfully.";
             }
         }
 
@@ -723,9 +788,9 @@ namespace StudentReportGenerator.Services
                             BatchDataInput += $"{parts[0]} | {parts[1]}\n";
                         }
                     }
-                    StatusText = "CSV text parameters parsed successfully.";
+                    StatusText = "Roster dataset imported successfully.";
                 }
-                catch (Exception ex) { MessageBox.Show($"Parsing fault: {ex.Message}"); }
+                catch (Exception ex) { MessageBox.Show($"File parse error: {ex.Message}"); }
             }
         }
 
@@ -757,9 +822,9 @@ namespace StudentReportGenerator.Services
                     }
                     StudentDatabaseService.SaveStudents(_studentDatabase);
                     RefreshCollections();
-                    StatusText = $"Ingested {addedCount} records to student cache roster.";
+                    StatusText = $"Ingested {addedCount} new teacher tracking profile logs.";
                 }
-                catch (Exception ex) { MessageBox.Show($"Roster error: {ex.Message}"); }
+                catch (Exception ex) { MessageBox.Show($"Roster load exception error: {ex.Message}"); }
             }
         }
 
@@ -770,13 +835,13 @@ namespace StudentReportGenerator.Services
             var matchingHistory = HistoryDatabaseService.LoadHistory()
                 .Where(r => r.StudentName.Contains(target, StringComparison.OrdinalIgnoreCase)).ToList();
             SessionHistory = new ObservableCollection<SessionRecord>(matchingHistory);
-            StatusText = $"Filtering history logs for: {target}";
+            StatusText = $"Filtering data timeline logs for: {target}";
         }
 
         private void ClearHistoryFilter()
         {
             SessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>();
-            StatusText = "Reset history timeline overview filter.";
+            StatusText = "Reset log filter trackers.";
         }
 
         private void SaveCurriculumTopic()
@@ -825,7 +890,7 @@ namespace StudentReportGenerator.Services
             {
                 CompareOutputRight = SelectedHistoryItem.GeneratedReport;
             }
-            StatusText = "Ready to analyze historical comparison values.";
+            StatusText = "Comparing current workspace with historical record snapshot.";
         }
 
         private string GetSmartFileName(string ext)
