@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace StudentReportGenerator.Models
 {
@@ -14,7 +15,7 @@ namespace StudentReportGenerator.Models
         public string TeacherSignoff { get; set; } = string.Empty;
         public string SelectedModel { get; set; } = string.Empty;
 
-        // SPRINT 24: New Context Fields for the AI
+        // Context Fields for the AI
         public string TargetGrade { get; set; } = string.Empty;
         public string SupportNeeds { get; set; } = string.Empty;
     }
@@ -31,7 +32,17 @@ namespace StudentReportGenerator.Models
         public string StudentName { get; set; } = string.Empty;
         public string GeneratedReport { get; set; } = string.Empty;
         public DateTime Timestamp { get; set; }
-        public string DisplayText => $"{StudentName} - {Timestamp:HH:mm}";
+
+        // Fix applied: Dynamically clears out old bracket indicators to keep the display clean
+        public string DisplayText
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(StudentName)) return $"Report - {Timestamp:HH:mm}";
+                string cleanName = Regex.Replace(StudentName, @"\s*[\(\[][^\]\)]+[\)\]]", "");
+                return $"{cleanName} - {Timestamp:HH:mm}";
+            }
+        }
     }
 
     public class ReportFramework
@@ -47,7 +58,7 @@ namespace StudentReportGenerator.Models
         public string ClassName { get; set; } = string.Empty;
         public string ParentEmail { get; set; } = string.Empty;
 
-        // SPRINT 24: Expanded Database Fields
+        // Expanded Database Fields
         public string TargetGrade { get; set; } = string.Empty;
         public string SupportNeeds { get; set; } = string.Empty;
     }

@@ -578,20 +578,22 @@
                 <Grid Grid.Row="1" Margin="0,0,0,15">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*">
-                            <ColumnDefinition.Style>
-                                <Style TargetType="ColumnDefinition">
-                                    <Setter Property="Width" Value="0"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsCompareRightVisible}" Value="True">
-                                            <Setter Property="Width" Value="*"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ColumnDefinition.Style>
-                        </ColumnDefinition>
+                        <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <TextBox Text="{Binding GeneratedReportOutput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" SpellCheck.IsEnabled="True" Grid.Column="0" TextWrapping="Wrap" AcceptsReturn="True" FontSize="14" Padding="15"/>
+
+                    <TextBox Text="{Binding GeneratedReportOutput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" SpellCheck.IsEnabled="True" Grid.Column="0" TextWrapping="Wrap" AcceptsReturn="True" FontSize="14" Padding="15">
+                        <TextBox.Style>
+                            <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                <Setter Property="Grid.ColumnSpan" Value="1"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsCompareRightVisible}" Value="False">
+                                        <Setter Property="Grid.ColumnSpan" Value="2"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBox.Style>
+                    </TextBox>
+
                     <TextBox Text="{Binding CompareOutputRight, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Background="{DynamicResource ThemePreviewBg}" SpellCheck.IsEnabled="True" Grid.Column="1" Margin="10,0,0,0" TextWrapping="Wrap" AcceptsReturn="True" FontSize="14" Padding="15" Visibility="{Binding IsCompareRightVisible, Converter={StaticResource BoolToVis}}"/>
                 </Grid>
 
@@ -688,7 +690,9 @@
                     <Border Background="#FFF3E0" CornerRadius="8" Padding="12" Margin="0,0,0,20">
                         <TextBlock Text="🔒 Secure Framework Assertion: No records leave host machine architecture partitions. All data rows are encrypted bound using local computer cryptography windows scope protections rules matrices layers structures." TextWrapping="Wrap" Foreground="#E65100" FontWeight="SemiBold" TextAlignment="Center" FontSize="11"/>
                     </Border>
-                    <Button Command="{Binding EnterAppCommand}" Content="Initialize Core Workspace Panel" Height="45" Width="360" FontSize="15" Style="{StaticResource ModernPrimaryButtonStyle}" HorizontalAlignment="Center"/>
+                    <Grid>
+                        <Button Command="{Binding EnterAppCommand}" Content="Initialize Core Workspace Panel" Height="45" Width="360" FontSize="15" Style="{StaticResource ModernPrimaryButtonStyle}" HorizontalAlignment="Center"/>
+                    </Grid>
                 </StackPanel>
             </Border>
         </Border>
