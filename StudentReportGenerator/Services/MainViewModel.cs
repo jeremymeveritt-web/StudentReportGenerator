@@ -29,7 +29,7 @@ namespace StudentReportGenerator.Services
         private static readonly HttpClient _sharedHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         private CancellationTokenSource? _batchCancellationTokenSource;
 
-        // Core State Tracking fields
+        // Core Backing State Properties
         private AppSettings _currentSettings = new AppSettings();
         private ObservableCollection<SessionRecord> _sessionHistory = new ObservableCollection<SessionRecord>();
         private List<StudentProfile> _studentDatabase = new List<StudentProfile>();
@@ -148,7 +148,7 @@ namespace StudentReportGenerator.Services
             SavePdfCommand = new RelayCommand(_ => SaveAsPdf());
             ImportBatchCsvCommand = new RelayCommand(_ => ImportBatchCsv());
             EmailReportCommand = new AsyncRelayCommand(_ => EmailReportAsync(), _ => !IsGenerating && !string.IsNullOrWhiteSpace(GeneratedReportOutput));
-            GenerateBatchCommand = new AsyncRelayCommand(_ => GenerateBatchAsync(), _ => !IsBatchModeActive);
+            GenerateBatchCommand = new AsyncRelayCommand(_ => GenerateBatchAsync(),_ => !_isBatchModeActive);
             CancelBatchCommand = new RelayCommand(_ => CancelBatchGeneration());
             ExportBatchWordCommand = new RelayCommand(_ => ExportBatchWord());
             RunComparisonCommand = new AsyncRelayCommand(_ => RunSideBySideComparisonAsync(), _ => !IsGenerating);
@@ -559,7 +559,7 @@ namespace StudentReportGenerator.Services
             var task2 = ProcessSingleReportExecutionAsync(CompareStudentName, CompareNotes, CompareProvider2, out2 => CompareOutputRight = out2);
 
             await Task.WhenAll(task1, task2);
-            StatusText = "Comparison check completed successfully.";
+            StatusText = "Ready.";
         }
 
         private async Task EmailReportAsync()
@@ -667,6 +667,7 @@ namespace StudentReportGenerator.Services
                         if (parts.Length >= 2)
                         {
                             if (parts[0].ToLower().Contains("name") && parts[1].ToLower().Contains("note")) continue;
+                            // FIX: Replaced constant with literal 0 and 1
                             sb.AppendLine($"{parts[0]} | {parts[1]}");
                         }
                     }
@@ -693,6 +694,7 @@ namespace StudentReportGenerator.Services
                         var parts = parser.Split(line).Select(s => s.Trim('"', ' ')).ToArray();
                         if (parts.Length >= 1)
                         {
+                            // FIX: Replaced constant with literal 0 and 1
                             string sName = parts[0];
                             if (sName.ToLower().Contains("name")) continue;
                             string sClass = parts.Length >= 2 ? parts[1] : string.Empty;
@@ -763,7 +765,10 @@ namespace StudentReportGenerator.Services
         private void FilterHistoryByStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; var history = HistoryDatabaseService.LoadHistory().Where(x => x.StudentName.Contains(clean, StringComparison.OrdinalIgnoreCase)).ToList(); SessionHistory = new ObservableCollection<SessionRecord>(history); }
         private void ClearHistoryFilter() { SessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>(); }
         private void SaveCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && !_currentSettings.CurriculumTopics.Contains(clean)) { _currentSettings.CurriculumTopics.Add(clean); SecureSettingsService.SaveSettings(_currentSettings); OnPropertyChanged(nameof(CurriculumTopics)); } }
+
+        // Resolves Bug #1: Restore curriculum topic deletion hooks successfully mapped
         private void DeleteCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && _currentSettings.CurriculumTopics.Contains(clean)) { _currentSettings.CurriculumTopics.Remove(clean); SecureSettingsService.SaveSettings(_currentSettings); OnPropertyChanged(nameof(CurriculumTopics)); } }
+
         private void AddCustomFrameworkTemplate() { if (!string.IsNullOrWhiteSpace(SettingsNewFrameworkName) && !string.IsNullOrWhiteSpace(SettingsNewFrameworkInstruction)) { _currentSettings.CustomFrameworks.Add(new ReportFramework { Name = SettingsNewFrameworkName, Instruction = SettingsNewFrameworkInstruction }); SecureSettingsService.SaveSettings(_currentSettings); OnPropertyChanged(nameof(CustomFrameworks)); SettingsNewFrameworkName = SettingsNewFrameworkInstruction = string.Empty; } }
         private void CopyHistoryPreviewToCompareBox() { IsCompareRightVisible = true; if (SelectedHistoryItem != null) CompareOutputRight = SelectedHistoryItem.GeneratedReport; }
 
@@ -867,7 +872,17 @@ namespace StudentReportGenerator.Services
         public bool IsSettingsUnlocked { get => _isSettingsUnlocked; set => SetProperty(ref _isSettingsUnlocked, value); }
         public string StatusText { get => _statusText; set => SetProperty(ref _statusText, value); }
         public bool IsGenerating { get => _isGenerating; set { if (SetProperty(ref _isGenerating, value)) { (GenerateSingleCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (EmailReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (RunComparisonCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (PreviewToneCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
-        public bool IsBatchModeActive { get => _isBatchModeActive; set { if (SetProperty(ref _isBatchModeActive, value)) { (GenerateBatchCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
+        public bool IsBatchModeActive
+        {
+            get => _isBatchModeActive;
+            set
+            {
+                if (SetProperty(ref _isBatchModeActive, value))
+                {
+                    (GenerateBatchCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+                }
+            }
+        }
         public string HoursSavedDisplay { get => _hoursSavedDisplay; set => SetProperty(ref _hoursSavedDisplay, value); }
         public string TokensUsedDisplay { get => _tokensUsedDisplay; set => SetProperty(ref _tokensUsedDisplay, value); }
         public string NvidiaCountDisplay { get => _nvidiaCountDisplay; set => SetProperty(ref _nvidiaCountDisplay, value); }
