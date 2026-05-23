@@ -4,6 +4,8 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Security;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,11 +26,10 @@ namespace StudentReportGenerator.Services
 
     public class MainViewModel : ViewModelBase
     {
-        // Commercial Hardening: Establish explicit network fail-safe timeouts (30 seconds)
         private static readonly HttpClient _sharedHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         private CancellationTokenSource? _batchCancellationTokenSource;
 
-        // Core State Properties
+        // Core State Tracking fields
         private AppSettings _currentSettings = new AppSettings();
         private ObservableCollection<SessionRecord> _sessionHistory = new ObservableCollection<SessionRecord>();
         private List<StudentProfile> _studentDatabase = new List<StudentProfile>();
@@ -54,7 +55,6 @@ namespace StudentReportGenerator.Services
         private bool _isTimekeepingPerfect = true;
         private bool _isTimekeepingGood = false;
         private bool _isTimekeepingPoor = false;
-
         private bool _isContributionEnthusiastic = true;
         private bool _isContributionOccasional = false;
         private bool _isContributionRare = false;
@@ -76,14 +76,13 @@ namespace StudentReportGenerator.Services
         private string _settingsSchoolName = string.Empty;
         private string _settingsTeacherName = string.Empty;
         private string _settingsSmtpEmail = string.Empty;
-        private string _settingsSmtpPassword = string.Empty;
+        private SecureString _settingsSmtpSecurePassword = new SecureString();
         private string _settingsMasterPassword = string.Empty;
         private string _settingsUnlockPassword = string.Empty;
-        private ComboBoxItemWrapper? _selectedThemeColor;
         private string _settingsNewFrameworkName = string.Empty;
         private string _settingsNewFrameworkInstruction = string.Empty;
         private string _dynamicApiKeyLabel = "NVIDIA Key:";
-        private string _dynamicApiKeyPassword = string.Empty;
+        private SecureString _dynamicSecureApiKey = new SecureString();
         private string _selectedModelTier = string.Empty;
         private ObservableCollection<ComboBoxItemWrapper> _modelTierOptions = new ObservableCollection<ComboBoxItemWrapper>();
 
@@ -107,7 +106,7 @@ namespace StudentReportGenerator.Services
         private string _openaiCountDisplay = "0";
         private string _claudeCountDisplay = "0";
 
-        // Commands
+        // Commands Definitions
         public ICommand GenerateSingleCommand { get; }
         public ICommand SaveStudentCommand { get; }
         public ICommand DeleteStudentCommand { get; }
@@ -120,7 +119,7 @@ namespace StudentReportGenerator.Services
         public ICommand SaveWordCommand { get; }
         public ICommand SavePdfCommand { get; }
         public ICommand EmailReportCommand { get; }
-        public ICommand ImportBatchCsvCommand { get; set; }
+        public ICommand ImportBatchCsvCommand { get; }
         public ICommand GenerateBatchCommand { get; }
         public ICommand CancelBatchCommand { get; }
         public ICommand ExportBatchWordCommand { get; }
@@ -136,7 +135,7 @@ namespace StudentReportGenerator.Services
 
         public MainViewModel()
         {
-            GenerateSingleCommand = new RelayCommand(_ => Task.Run(GenerateSingleReportAsync));
+            GenerateSingleCommand = new AsyncRelayCommand(_ => GenerateSingleReportAsync(), _ => !IsGenerating);
             SaveStudentCommand = new RelayCommand(_ => SaveStudent());
             DeleteStudentCommand = new RelayCommand(_ => DeleteStudent());
             SaveProfileSettingsCommand = new RelayCommand(_ => SaveProfileSettings());
@@ -148,18 +147,18 @@ namespace StudentReportGenerator.Services
             SaveWordCommand = new RelayCommand(_ => SaveAsWord());
             SavePdfCommand = new RelayCommand(_ => SaveAsPdf());
             ImportBatchCsvCommand = new RelayCommand(_ => ImportBatchCsv());
-            EmailReportCommand = new RelayCommand(_ => Task.Run(EmailReportAsync));
-            GenerateBatchCommand = new RelayCommand(_ => Task.Run(GenerateBatchAsync));
+            EmailReportCommand = new AsyncRelayCommand(_ => EmailReportAsync(), _ => !IsGenerating && !string.IsNullOrWhiteSpace(GeneratedReportOutput));
+            GenerateBatchCommand = new AsyncRelayCommand(_ => GenerateBatchAsync(), _ => !IsBatchModeActive);
             CancelBatchCommand = new RelayCommand(_ => CancelBatchGeneration());
             ExportBatchWordCommand = new RelayCommand(_ => ExportBatchWord());
-            RunComparisonCommand = new RelayCommand(_ => Task.Run(RunSideBySideComparisonAsync));
+            RunComparisonCommand = new AsyncRelayCommand(_ => RunSideBySideComparisonAsync(), _ => !IsGenerating);
             ImportRosterCommand = new RelayCommand(_ => ImportRosterCsv());
             ViewStudentHistoryCommand = new RelayCommand(_ => FilterHistoryByStudent());
             ShowAllHistoryCommand = new RelayCommand(_ => ClearHistoryFilter());
             SaveCurriculumCommand = new RelayCommand(_ => SaveCurriculumTopic());
             DeleteCurriculumCommand = new RelayCommand(_ => DeleteCurriculumTopic());
             AddFrameworkCommand = new RelayCommand(_ => AddCustomFrameworkTemplate());
-            PreviewToneCommand = new RelayCommand(_ => Task.Run(PreviewToneAsync));
+            PreviewToneCommand = new AsyncRelayCommand(_ => PreviewToneAsync(), _ => !IsGenerating);
             CompareHistoryCommand = new RelayCommand(_ => CopyHistoryPreviewToCompareBox());
 
             _sessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>();
@@ -188,9 +187,10 @@ namespace StudentReportGenerator.Services
             SettingsSchoolName = _currentSettings.SchoolName;
             SettingsTeacherName = _currentSettings.TeacherSignoff;
             SettingsSmtpEmail = _currentSettings.SmtpEmail;
-            SettingsSmtpPassword = _currentSettings.SmtpPassword;
-            SettingsMasterPassword = _currentSettings.MasterPassword;
             IsDarkMode = _currentSettings.IsDarkMode;
+
+            _settingsSmtpSecurePassword = ConvertToSecureString(_currentSettings.SmtpPassword);
+            _currentSettings.SmtpPassword = string.Empty;
 
             ApplyBrandingConfiguration();
             EvaluateAiProviderOptions(_currentSettings.AiProvider);
@@ -210,7 +210,7 @@ namespace StudentReportGenerator.Services
             if (cleanProvider.Contains("NVIDIA"))
             {
                 DynamicApiKeyLabel = "NVIDIA Key:";
-                DynamicApiKeyPassword = _currentSettings.NvidiaApiKey;
+                _dynamicSecureApiKey = ConvertToSecureString(_currentSettings.NvidiaApiKey);
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Llama 3.1 405B (Smarter)", Tag = "meta/llama-3.1-405b-instruct" });
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Llama 3.1 70B (Balanced)", Tag = "meta/llama-3.1-70b-instruct" });
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Nemotron 70B (NVIDIA)", Tag = "nvidia/nemotron-4-340b-instruct" });
@@ -220,7 +220,7 @@ namespace StudentReportGenerator.Services
             else if (cleanProvider.Contains("Gemini"))
             {
                 DynamicApiKeyLabel = "Gemini Key:";
-                DynamicApiKeyPassword = _currentSettings.GeminiApiKey;
+                _dynamicSecureApiKey = ConvertToSecureString(_currentSettings.GeminiApiKey);
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Gemini 2.5 Flash", Tag = "gemini-2.5-flash" });
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Gemini 2.5 Pro", Tag = "gemini-2.5-pro" });
                 SelectedModelTier = _currentSettings.GeminiModelTier;
@@ -228,7 +228,7 @@ namespace StudentReportGenerator.Services
             else if (cleanProvider.Contains("OpenAI"))
             {
                 DynamicApiKeyLabel = "OpenAI Key:";
-                DynamicApiKeyPassword = _currentSettings.OpenAiApiKey;
+                _dynamicSecureApiKey = ConvertToSecureString(_currentSettings.OpenAiApiKey);
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "GPT-4o Mini", Tag = "gpt-4o-mini" });
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "GPT-4o", Tag = "gpt-4o" });
                 SelectedModelTier = _currentSettings.OpenAiModelTier;
@@ -236,7 +236,7 @@ namespace StudentReportGenerator.Services
             else if (cleanProvider.Contains("Claude"))
             {
                 DynamicApiKeyLabel = "Claude Key:";
-                DynamicApiKeyPassword = _currentSettings.ClaudeApiKey;
+                _dynamicSecureApiKey = ConvertToSecureString(_currentSettings.ClaudeApiKey);
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Claude 3 Haiku", Tag = "claude-3-haiku-20240307" });
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Claude 3.5 Sonnet", Tag = "claude-3-5-sonnet-20240620" });
                 SelectedModelTier = _currentSettings.ClaudeModelTier;
@@ -262,7 +262,10 @@ namespace StudentReportGenerator.Services
                 {
                     NavBarBackground = (SolidColorBrush)new BrushConverter().ConvertFrom(_currentSettings.ThemeColorHex);
                 }
-                catch { }
+                catch
+                {
+                    NavBarBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF392A4C"));
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(_currentSettings.SchoolName) && _currentSettings.SchoolName != "Enter School Name")
@@ -299,26 +302,48 @@ namespace StudentReportGenerator.Services
             }
             return source.Trim();
         }
+
+        private SecureString ConvertToSecureString(string text)
+        {
+            var secure = new SecureString();
+            if (string.IsNullOrEmpty(text)) return secure;
+            foreach (char c in text) secure.AppendChar(c);
+            secure.MakeReadOnly();
+            return secure;
+        }
+
+        private string ConvertToPlainString(SecureString secure)
+        {
+            if (secure == null || secure.Length == 0) return string.Empty;
+            IntPtr pointer = System.Runtime.InteropServices.Marshal.SecureStringToBSTR(secure);
+            try
+            {
+                return System.Runtime.InteropServices.Marshal.PtrToStringBSTR(pointer);
+            }
+            finally
+            {
+                System.Runtime.InteropServices.Marshal.ZeroFreeBSTR(pointer);
+            }
+        }
         #endregion
 
         #region MVVM Logic Actions Implementation
         private async Task GenerateSingleReportAsync()
         {
-            // Retail Hardening: Form Input Fields Empty Space Intercept Guard
             string cleanStudentName = SanitizeControlOutput(SelectedStudentName);
             string cleanTopic = SanitizeControlOutput(SelectedCurriculumTopic);
 
             if (string.IsNullOrWhiteSpace(cleanStudentName))
             {
                 StatusText = "Error: Please input or select a Student Name.";
-                MessageBox.Show("The student's name field cannot be empty.", "Input Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("The student's name field cannot be empty.", "Missing Field", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(cleanTopic))
             {
                 StatusText = "Error: Please input or select a Curriculum Topic.";
-                MessageBox.Show("A curriculum topic is required to guide report context formatting.", "Input Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("A curriculum topic must be designated to proceed.", "Missing Field", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -346,19 +371,19 @@ namespace StudentReportGenerator.Services
         private async Task<bool> ProcessSingleReportExecutionAsync(string name, string notes, string provider, Action<string> onCompleteOutput)
         {
             IsGenerating = true;
-            string activeKey = string.Empty;
+            string activeKey = ConvertToPlainString(_dynamicSecureApiKey);
             string activeModel = SanitizeControlOutput(SelectedModelTier);
             string cleanProvider = SanitizeControlOutput(provider);
             IAiService activeAiEngine;
 
-            if (cleanProvider.Contains("NVIDIA")) { activeKey = _currentSettings.NvidiaApiKey; activeAiEngine = new NvidiaReportService(_sharedHttpClient, activeKey); }
-            else if (cleanProvider.Contains("OpenAI")) { activeKey = _currentSettings.OpenAiApiKey; activeAiEngine = new OpenAiReportService(_sharedHttpClient, activeKey); }
-            else if (cleanProvider.Contains("Claude")) { activeKey = _currentSettings.ClaudeApiKey; activeAiEngine = new ClaudeReportService(_sharedHttpClient, activeKey); }
-            else { activeKey = _currentSettings.GeminiApiKey; activeAiEngine = new GeminiReportService(_sharedHttpClient, activeKey); }
+            if (cleanProvider.Contains("NVIDIA")) { activeAiEngine = new NvidiaReportService(_sharedHttpClient, activeKey); }
+            else if (cleanProvider.Contains("OpenAI")) { activeAiEngine = new OpenAiReportService(_sharedHttpClient, activeKey); }
+            else if (cleanProvider.Contains("Claude")) { activeAiEngine = new ClaudeReportService(_sharedHttpClient, activeKey); }
+            else { activeAiEngine = new GeminiReportService(_sharedHttpClient, activeKey); }
 
             if (string.IsNullOrWhiteSpace(activeKey))
             {
-                onCompleteOutput("ERROR: Missing API Key inside configurations. Please navigate to AI Engine Properties to input a key.");
+                onCompleteOutput("ERROR: Missing API Key inside configuration profiles.");
                 IsGenerating = false;
                 return false;
             }
@@ -395,14 +420,11 @@ namespace StudentReportGenerator.Services
                 {
                     onCompleteOutput(response.GeneratedReport);
 
-                    Application.Current.Dispatcher.Invoke(() =>
+                    SessionHistory.Insert(0, new SessionRecord
                     {
-                        SessionHistory.Insert(0, new SessionRecord
-                        {
-                            StudentName = request.StudentName,
-                            GeneratedReport = response.GeneratedReport,
-                            Timestamp = DateTime.Now
-                        });
+                        StudentName = request.StudentName,
+                        GeneratedReport = response.GeneratedReport,
+                        Timestamp = DateTime.Now
                     });
 
                     HistoryDatabaseService.SaveHistory(SessionHistory);
@@ -416,7 +438,20 @@ namespace StudentReportGenerator.Services
                     else if (cleanProvider.Contains("Claude")) _currentSettings.ClaudeReportsCount++;
                     else _currentSettings.GeminiReportsCount++;
 
+                    _currentSettings.SmtpPassword = ConvertToPlainString(_settingsSmtpSecurePassword);
+                    _currentSettings.NvidiaApiKey = cleanProvider.Contains("NVIDIA") ? activeKey : _currentSettings.NvidiaApiKey;
+                    _currentSettings.GeminiApiKey = cleanProvider.Contains("Gemini") ? activeKey : _currentSettings.GeminiApiKey;
+                    _currentSettings.OpenAiApiKey = cleanProvider.Contains("OpenAI") ? activeKey : _currentSettings.OpenAiApiKey;
+                    _currentSettings.ClaudeApiKey = cleanProvider.Contains("Claude") ? activeKey : _currentSettings.ClaudeApiKey;
+
                     SecureSettingsService.SaveSettings(_currentSettings);
+
+                    _currentSettings.SmtpPassword = string.Empty;
+                    _currentSettings.NvidiaApiKey = string.Empty;
+                    _currentSettings.GeminiApiKey = string.Empty;
+                    _currentSettings.OpenAiApiKey = string.Empty;
+                    _currentSettings.ClaudeApiKey = string.Empty;
+
                     UpdateDashboardMetricsDisplay();
                     StatusText = "Ready.";
                     return true;
@@ -426,18 +461,17 @@ namespace StudentReportGenerator.Services
                 StatusText = "Generation failed.";
                 return false;
             }
-            // Retail Hardening: Intercept Request Task Cancellation / Sockets Timeout Constraints
             catch (TaskCanceledException)
             {
                 IsGenerating = false;
-                onCompleteOutput("CONNECTION ERROR: The request timed out. Please verify your internet connection or check if the selected AI provider service is down.");
+                onCompleteOutput("CONNECTION TIMEOUT: The downstream system connection window expired.");
                 StatusText = "Connection timed out.";
                 return false;
             }
             catch (Exception ex)
             {
                 IsGenerating = false;
-                onCompleteOutput($"SYSTEM ERROR: An unhandled connection error occurred: {ex.Message}");
+                onCompleteOutput($"SYSTEM EXCEPTION: {ex.Message}");
                 StatusText = "Error encountered.";
                 return false;
             }
@@ -447,13 +481,13 @@ namespace StudentReportGenerator.Services
         {
             if (string.IsNullOrWhiteSpace(BatchDataInput))
             {
-                MessageBox.Show("Please input or paste roster elements inside the text panel before running batch automation.", "Roster Empty", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("Please provide or load roster elements data strings inside the entry box before executing batch generation operations.", "Roster Empty", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             IsBatchModeActive = true;
             IsCompareRightVisible = false;
-            GeneratedReportOutput = "Starting batch generation sequence workflow...\n";
+            GeneratedReportOutput = "Starting batch processing...\n";
 
             var lines = BatchDataInput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             int successCount = 0;
@@ -465,44 +499,31 @@ namespace StudentReportGenerator.Services
             {
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    if (token.IsCancellationRequested)
-                    {
-                        GeneratedReportOutput += "\n\n⚠️ BATCH PROCESS CANCELED BY TEACHER OVERRIDE.";
-                        break;
-                    }
+                    if (token.IsCancellationRequested) break;
 
-                    // Retail Hardening: Validation Guard catches lines lacking delimiter formatting tokens
-                    if (!lines[i].Contains("|"))
-                    {
-                        GeneratedReportOutput += $"\n[Row {i + 1} Skipped]: Error - Missing pipeline divider character formatting alignment token ('|').";
-                        continue;
-                    }
+                    if (!lines[i].Contains("|")) continue;
 
                     var parts = lines[i].Split('|');
                     string studentNameClean = parts[0].Trim();
                     string studentNotesClean = parts[1].Trim();
 
-                    if (string.IsNullOrWhiteSpace(studentNameClean))
-                    {
-                        GeneratedReportOutput += $"\n[Row {i + 1} Skipped]: Error - Student reference identifier name string is unpopulated.";
-                        continue;
-                    }
+                    if (string.IsNullOrWhiteSpace(studentNameClean)) continue;
 
-                    StatusText = $"Processing report {i + 1} of {lines.Length} ({studentNameClean})...";
+                    StatusText = $"Generating batch card {i + 1} of {lines.Length}...";
 
                     bool success = await ProcessSingleReportExecutionAsync(studentNameClean, studentNotesClean, _currentSettings.AiProvider, report => GeneratedReportOutput = report);
                     if (success) successCount++;
 
                     if (i < lines.Length - 1 && !token.IsCancellationRequested)
                     {
-                        await Task.Delay(1500, token); // Polite delay pacing rule to respect downstream token limits
+                        await Task.Delay(1500, token);
                     }
                 }
-                StatusText = token.IsCancellationRequested ? $"Batch Stopped. {successCount} reports written." : $"Batch complete! {successCount} student profiles updated.";
+                StatusText = "Batch update completed.";
             }
             catch (TaskCanceledException)
             {
-                StatusText = $"Batch Stopped. {successCount} reports written.";
+                StatusText = "Batch Stopped.";
             }
             finally
             {
@@ -517,7 +538,7 @@ namespace StudentReportGenerator.Services
             if (_batchCancellationTokenSource != null && !_batchCancellationTokenSource.IsCancellationRequested)
             {
                 _batchCancellationTokenSource.Cancel();
-                StatusText = "Halt requested. Shutting down active queues...";
+                StatusText = "Stopping active background queue arrays runs...";
             }
         }
 
@@ -525,140 +546,59 @@ namespace StudentReportGenerator.Services
         {
             if (string.IsNullOrWhiteSpace(CompareStudentName) || string.IsNullOrWhiteSpace(CompareNotes))
             {
-                MessageBox.Show("Please complete all comparison text attributes fields before initiating cross engine matrix analysis metrics.", "Form Incomplete", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("Please ensure both comparison target input fields are fully completed before executing concurrent model analysis checks.", "Form Incomplete", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             IsCompareRightVisible = true;
-            GeneratedReportOutput = $"Querying model channel 1 ({CompareProvider1})...\n";
-            CompareOutputRight = $"Querying model channel 2 ({CompareProvider2})...\n";
-            StatusText = "Running side-by-side comparative diagnostics execution...";
+            GeneratedReportOutput = $"Querying provider 1 ({CompareProvider1})...\n";
+            CompareOutputRight = $"Querying provider 2 ({CompareProvider2})...\n";
+            StatusText = "Running simultaneous multiple analysis...";
 
             var task1 = ProcessSingleReportExecutionAsync(CompareStudentName, CompareNotes, CompareProvider1, out1 => GeneratedReportOutput = out1);
             var task2 = ProcessSingleReportExecutionAsync(CompareStudentName, CompareNotes, CompareProvider2, out2 => CompareOutputRight = out2);
 
             await Task.WhenAll(task1, task2);
-            StatusText = "Comparative lab processing sequences finished.";
+            StatusText = "Comparison check completed successfully.";
         }
 
         private async Task EmailReportAsync()
         {
-            if (string.IsNullOrWhiteSpace(_currentSettings.SmtpEmail) || string.IsNullOrWhiteSpace(_currentSettings.SmtpPassword))
+            string plainSmtpPassword = ConvertToPlainString(_settingsSmtpSecurePassword);
+            if (string.IsNullOrWhiteSpace(_currentSettings.SmtpEmail) || string.IsNullOrWhiteSpace(plainSmtpPassword))
             {
-                StatusText = "Email failed: Missing profile outbox configurations credentials.";
-                MessageBox.Show("Please configure your institutional provider SMTP outbox details inside Profile Settings before attempting parent dispatch routes.", "Configuration Profile Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                StatusText = "Email failed: SMTP outbox credentials unconfigured.";
+                MessageBox.Show("Please configure your school email credentials in Profile Settings before attempting parent updates.", "Configuration Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try { _ = new System.Net.Mail.MailAddress(ParentEmail); }
+            catch
+            {
+                MessageBox.Show($"The email address \"{ParentEmail}\" is not valid.\nPlease enter a correctly formatted address.", "Invalid Email Address", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(GeneratedReportOutput))
             {
-                MessageBox.Show("The report document workspace output cache is currently empty. Please construct a valid document card payload string first.", "Payload Blank", MessageBoxButton.OK, MessageBoxImage.Asterisk);
+                StatusText = "Email failed: Missing text.";
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(ParentEmail) || !ParentEmail.Contains("@"))
-            {
-                MessageBox.Show("Please input a valid structured parent email layout node location string target syntax schema pattern.", "Invalid Address Data", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
+            string studentName = SanitizeControlOutput(SelectedStudentName);
+            string subjectLine = string.IsNullOrWhiteSpace(studentName) ? "Student Update Summary Report" : $"Performance Summary Update Card — {studentName}";
 
-            StatusText = "Sending email to parent...";
+            StatusText = "Sending update email to parent...";
             try
             {
-                string subject = $"Official Student Performance Summary Report Card";
-                await EmailService.SendEmailAsync(ParentEmail, subject, GeneratedReportOutput,
+                await EmailService.SendEmailAsync(ParentEmail, subjectLine, GeneratedReportOutput,
                                                   _currentSettings.SmtpServer, _currentSettings.SmtpPort,
-                                                  _currentSettings.SmtpEmail, _currentSettings.SmtpPassword);
-                StatusText = "Email sent successfully!";
-                MessageBox.Show($"The generated report update has been sent directly to target mailbox node: {ParentEmail}", "Dispatch Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                                                  _currentSettings.SmtpEmail, _settingsSmtpSecurePassword);
+                StatusText = "Email sent successfully.";
             }
             catch (Exception ex)
             {
                 StatusText = $"Email failed: {ex.Message}";
-                MessageBox.Show($"An exception was thrown by the outbox exchange server during delivery pipelines routing tracks:\n\n{ex.Message}", "Delivery Exception Fault", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private async Task PreviewToneAsync()
-        {
-            if (SelectedFramework == null) return;
-            StatusText = "Generating brief tone sample snippet...";
-
-            var request = new ReportRequest
-            {
-                StudentName = "Student Name",
-                Subject = "General Topic",
-                WordCount = 30,
-                RawNotes = "Student did a good job this term.",
-                SelectedFramework = SelectedFramework.Instruction + " IMPORTANT: Write exactly ONE sentence demonstrating this tone framework style alignment signature.",
-                SchoolName = _currentSettings.SchoolName,
-                TeacherSignoff = _currentSettings.TeacherSignoff,
-                SelectedModel = SelectedModelTier
-            };
-
-            IAiService activeAiEngine;
-            string provider = SanitizeControlOutput(_currentSettings.AiProvider);
-            string key = provider.Contains("NVIDIA") ? _currentSettings.NvidiaApiKey :
-                         provider.Contains("OpenAI") ? _currentSettings.OpenAiApiKey :
-                         provider.Contains("Claude") ? _currentSettings.ClaudeApiKey : _currentSettings.GeminiApiKey;
-
-            if (provider.Contains("NVIDIA")) activeAiEngine = new NvidiaReportService(_sharedHttpClient, key);
-            else if (provider.Contains("OpenAI")) activeAiEngine = new OpenAiReportService(_sharedHttpClient, key);
-            else if (provider.Contains("Claude")) activeAiEngine = new ClaudeReportService(_sharedHttpClient, key);
-            else activeAiEngine = new GeminiReportService(_sharedHttpClient, key);
-
-            var resp = await activeAiEngine.GenerateReportAsync(request);
-            if (resp.IsSuccess)
-            {
-                MessageBox.Show($"Tone Style Preview Alignment Verification snapshot:\n\n\"{resp.GeneratedReport}\"", "Template Framework Verified", MessageBoxButton.OK, MessageBoxImage.Information);
-                StatusText = "Tone framework metrics verified.";
-            }
-            else
-            {
-                StatusText = "Failed to pull alignment confirmation snippet.";
-            }
-        }
-
-        private void SaveStudent()
-        {
-            string cleanName = SanitizeControlOutput(SelectedStudentName);
-            if (string.IsNullOrWhiteSpace(cleanName)) return;
-            var match = _studentDatabase.FirstOrDefault(s => s.FullName.Equals(cleanName, StringComparison.OrdinalIgnoreCase));
-            if (match == null)
-            {
-                _studentDatabase.Add(new StudentProfile
-                {
-                    FullName = cleanName,
-                    ClassName = StudentClass,
-                    ParentEmail = ParentEmail,
-                    TargetGrade = TargetGrade,
-                    SupportNeeds = SupportNeeds
-                });
-            }
-            else
-            {
-                match.ClassName = StudentClass;
-                match.ParentEmail = ParentEmail;
-                match.TargetGrade = TargetGrade;
-                match.SupportNeeds = SupportNeeds;
-            }
-            StudentDatabaseService.SaveStudents(_studentDatabase);
-            RefreshCollections();
-            StatusText = "Student profile saved.";
-        }
-
-        private void DeleteStudent()
-        {
-            string cleanName = SanitizeControlOutput(SelectedStudentName);
-            var match = _studentDatabase.FirstOrDefault(s => s.FullName.Equals(cleanName, StringComparison.OrdinalIgnoreCase));
-            if (match != null)
-            {
-                _studentDatabase.Remove(match);
-                StudentDatabaseService.SaveStudents(_studentDatabase);
-                StudentClass = ParentEmail = TargetGrade = SupportNeeds = string.Empty;
-                SelectedStudentName = string.Empty;
-                RefreshCollections();
-                StatusText = "Record deleted from persistent profiles cache data registry.";
             }
         }
 
@@ -667,105 +607,46 @@ namespace StudentReportGenerator.Services
             _currentSettings.SchoolName = SettingsSchoolName;
             _currentSettings.TeacherSignoff = SettingsTeacherName;
             _currentSettings.SmtpEmail = SettingsSmtpEmail;
-            _currentSettings.SmtpPassword = SettingsSmtpPassword;
+
+            _currentSettings.SmtpPassword = ConvertToPlainString(_settingsSmtpSecurePassword);
             if (!string.IsNullOrEmpty(SettingsMasterPassword))
                 _currentSettings.MasterPassword = SettingsMasterPassword;
 
             SecureSettingsService.SaveSettings(_currentSettings);
+
+            _currentSettings.SmtpPassword = string.Empty;
             ApplyBrandingConfiguration();
-            StatusText = "Configurations saved successfully.";
+            StatusText = "System states saved cleanly.";
         }
 
         private void UnlockSettings()
         {
-            if (SettingsUnlockPassword == _currentSettings.MasterPassword || string.IsNullOrEmpty(_currentSettings.MasterPassword))
+            if (string.IsNullOrEmpty(_currentSettings.MasterPassword))
             {
                 IsSettingsUnlocked = true;
-                StatusText = "Security credentials cleared. Configurations unlocked.";
+                return;
+            }
+
+            if (CryptographicEquals(SettingsUnlockPassword, _currentSettings.MasterPassword))
+            {
+                IsSettingsUnlocked = true;
+                SettingsUnlockPassword = string.Empty;
+                StatusText = "Configurations portal open.";
             }
             else
             {
-                MessageBox.Show("Invalid password identity credential. Operational lock remains engaged.", "Shield Access Notice Exception", MessageBoxButton.OK, MessageBoxImage.Hand);
+                MessageBox.Show("Incorrect validation password key.", "Access Denied", MessageBoxButton.OK, MessageBoxImage.Warning);
                 SettingsUnlockPassword = string.Empty;
             }
         }
 
-        private void EnterApplication()
+        private static bool CryptographicEquals(string a, string b)
         {
-            if (IsProfileSetupVisible)
-            {
-                _currentSettings.TeacherSignoff = SettingsTeacherName;
-                _currentSettings.SchoolName = SettingsSchoolName;
-                SecureSettingsService.SaveSettings(_currentSettings);
-                ApplyBrandingConfiguration();
-            }
-            IsWelcomeOverlayVisible = false;
-        }
-
-        private void EditWelcomeProfile()
-        {
-            IsWelcomeBackVisible = false;
-            IsProfileSetupVisible = true;
-        }
-
-        private void UploadLogo()
-        {
-            var openDialog = new Microsoft.Win32.OpenFileDialog { Filter = "Image Files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg" };
-            if (openDialog.ShowDialog() == true)
-            {
-                try
-                {
-                    string ext = Path.GetExtension(openDialog.FileName);
-                    string target = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"school_logo{ext}");
-                    File.Copy(openDialog.FileName, target, true);
-                    _currentSettings.SchoolLogoPath = target;
-                    SecureSettingsService.SaveSettings(_currentSettings);
-                    ApplyBrandingConfiguration();
-                }
-                catch (Exception e) { MessageBox.Show($"File tracking error: {e.Message}"); }
-            }
-        }
-
-        private void CopyReportToClipboard()
-        {
-            if (!string.IsNullOrWhiteSpace(GeneratedReportOutput))
-            {
-                Clipboard.SetText(GeneratedReportOutput);
-                StatusText = "Report copied to clipboard.";
-            }
-        }
-
-        private void SaveAsWord()
-        {
-            if (string.IsNullOrWhiteSpace(GeneratedReportOutput)) return;
-            var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word Document (*.docx)|*.docx", FileName = GetSmartFileName(".docx") };
-            if (dialog.ShowDialog() == true)
-            {
-                WordExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput);
-                StatusText = "Word document saved.";
-            }
-        }
-
-        private void SaveAsPdf()
-        {
-            if (string.IsNullOrWhiteSpace(GeneratedReportOutput)) return;
-            var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "PDF Document (*.pdf)|*.pdf", FileName = GetSmartFileName(".pdf") };
-            if (dialog.ShowDialog() == true)
-            {
-                PdfExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput);
-                StatusText = "PDF document compiled.";
-            }
-        }
-
-        private void ExportBatchWord()
-        {
-            if (SessionHistory.Count == 0) return;
-            var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word Document (*.docx)|*.docx", FileName = $"Batch_Class_Reports_{DateTime.Now:yyyyMMdd}.docx" };
-            if (dialog.ShowDialog() == true)
-            {
-                WordExportService.ExportBatch(dialog.FileName, SessionHistory.ToList());
-                StatusText = "Bulk class portfolio document written successfully.";
-            }
+            if (a == null || b == null) return false;
+            int diff = a.Length ^ b.Length;
+            int len = Math.Min(a.Length, b.Length);
+            for (int i = 0; i < len; i++) diff |= a[i] ^ b[i];
+            return diff == 0;
         }
 
         private void ImportBatchCsv()
@@ -776,8 +657,9 @@ namespace StudentReportGenerator.Services
                 try
                 {
                     var lines = File.ReadAllLines(dialog.FileName);
-                    BatchDataInput = string.Empty;
-                    var parser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(Y?![^\"]*\"))");
+                    var sb = new StringBuilder();
+                    var parser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
+
                     foreach (var line in lines)
                     {
                         if (string.IsNullOrWhiteSpace(line)) continue;
@@ -785,12 +667,13 @@ namespace StudentReportGenerator.Services
                         if (parts.Length >= 2)
                         {
                             if (parts[0].ToLower().Contains("name") && parts[1].ToLower().Contains("note")) continue;
-                            BatchDataInput += $"{parts[0]} | {parts[1]}\n";
+                            sb.AppendLine($"{parts[0]} | {parts[1]}");
                         }
                     }
-                    StatusText = "Roster dataset imported successfully.";
+                    BatchDataInput = sb.ToString();
+                    StatusText = "Roster lines aggregated cleanly.";
                 }
-                catch (Exception ex) { MessageBox.Show($"File parse error: {ex.Message}"); }
+                catch (Exception ex) { MessageBox.Show($"File error: {ex.Message}"); }
             }
         }
 
@@ -802,7 +685,7 @@ namespace StudentReportGenerator.Services
                 try
                 {
                     var lines = File.ReadAllLines(dialog.FileName);
-                    var parser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(Y?![^\"]*\"))");
+                    var parser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
                     int addedCount = 0;
                     foreach (var line in lines)
                     {
@@ -822,88 +705,68 @@ namespace StudentReportGenerator.Services
                     }
                     StudentDatabaseService.SaveStudents(_studentDatabase);
                     RefreshCollections();
-                    StatusText = $"Ingested {addedCount} new teacher tracking profile logs.";
+                    StatusText = $"Ingested {addedCount} records to student cache roster.";
                 }
-                catch (Exception ex) { MessageBox.Show($"Roster load exception error: {ex.Message}"); }
+                catch (Exception ex) { MessageBox.Show($"Roster error: {ex.Message}"); }
             }
         }
 
-        private void FilterHistoryByStudent()
+        private async Task PreviewToneAsync()
         {
-            string target = SanitizeControlOutput(SelectedStudentName);
-            if (string.IsNullOrWhiteSpace(target)) return;
-            var matchingHistory = HistoryDatabaseService.LoadHistory()
-                .Where(r => r.StudentName.Contains(target, StringComparison.OrdinalIgnoreCase)).ToList();
-            SessionHistory = new ObservableCollection<SessionRecord>(matchingHistory);
-            StatusText = $"Filtering data timeline logs for: {target}";
-        }
+            if (SelectedFramework == null) return;
+            StatusText = "Generating brief tone framework sample snippet...";
 
-        private void ClearHistoryFilter()
-        {
-            SessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>();
-            StatusText = "Reset log filter trackers.";
-        }
-
-        private void SaveCurriculumTopic()
-        {
-            string topic = SanitizeControlOutput(SelectedCurriculumTopic);
-            if (string.IsNullOrWhiteSpace(topic)) return;
-            if (!_currentSettings.CurriculumTopics.Any(t => t.Equals(topic, StringComparison.OrdinalIgnoreCase)))
+            var request = new ReportRequest
             {
-                _currentSettings.CurriculumTopics.Add(topic);
-                _currentSettings.CurriculumTopics.Sort();
-                SecureSettingsService.SaveSettings(_currentSettings);
-                OnPropertyChanged(nameof(CurriculumTopics));
-                SelectedCurriculumTopic = topic;
-            }
-        }
+                StudentName = "Student Name",
+                Subject = "General Topic",
+                WordCount = 30,
+                RawNotes = "Student did a good job this term.",
+                SelectedFramework = SelectedFramework.Instruction + " IMPORTANT: Write exactly ONE sentence demonstrating this tone framework style signature.",
+                SchoolName = _currentSettings.SchoolName,
+                TeacherSignoff = _currentSettings.TeacherSignoff,
+                SelectedModel = SelectedModelTier
+            };
 
-        private void DeleteCurriculumTopic()
-        {
-            string topic = SanitizeControlOutput(SelectedCurriculumTopic);
-            if (string.IsNullOrWhiteSpace(topic)) return;
-            if (_currentSettings.CurriculumTopics.Contains(topic, StringComparer.OrdinalIgnoreCase))
+            IAiService activeAiEngine;
+            string provider = SanitizeControlOutput(_currentSettings.AiProvider);
+            string key = provider.Contains("NVIDIA") ? _currentSettings.NvidiaApiKey :
+                         provider.Contains("OpenAI") ? _currentSettings.OpenAiApiKey :
+                         provider.Contains("Claude") ? _currentSettings.ClaudeApiKey : _currentSettings.GeminiApiKey;
+
+            if (provider.Contains("NVIDIA")) activeAiEngine = new NvidiaReportService(_sharedHttpClient, key);
+            else if (provider.Contains("OpenAI")) activeAiEngine = new OpenAiReportService(_sharedHttpClient, key);
+            else if (provider.Contains("Claude")) activeAiEngine = new ClaudeReportService(_sharedHttpClient, key);
+            else activeAiEngine = new GeminiReportService(_sharedHttpClient, key);
+
+            var resp = await activeAiEngine.GenerateReportAsync(request);
+            if (resp.IsSuccess)
             {
-                var match = _currentSettings.CurriculumTopics.First(t => t.Equals(topic, StringComparison.OrdinalIgnoreCase));
-                _currentSettings.CurriculumTopics.Remove(match);
-                SecureSettingsService.SaveSettings(_currentSettings);
-                OnPropertyChanged(nameof(CurriculumTopics));
-                SelectedCurriculumTopic = string.Empty;
+                MessageBox.Show($"Tone Preview Sample Alignment Verification:\n\n\"{resp.GeneratedReport}\"", "Template Framework Verified", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusText = "Tone framework metrics verified.";
             }
-        }
-
-        private void AddCustomFrameworkTemplate()
-        {
-            if (!string.IsNullOrWhiteSpace(SettingsNewFrameworkName) && !string.IsNullOrWhiteSpace(SettingsNewFrameworkInstruction))
+            else
             {
-                _currentSettings.CustomFrameworks.Add(new ReportFramework { Name = SettingsNewFrameworkName, Instruction = SettingsNewFrameworkInstruction });
-                SecureSettingsService.SaveSettings(_currentSettings);
-                OnPropertyChanged(nameof(CustomFrameworks));
-                SettingsNewFrameworkName = SettingsNewFrameworkInstruction = string.Empty;
+                StatusText = "Failed to pull alignment confirmation snippet.";
             }
         }
 
-        private void CopyHistoryPreviewToCompareBox()
-        {
-            IsCompareRightVisible = true;
-            if (SelectedHistoryItem != null)
-            {
-                CompareOutputRight = SelectedHistoryItem.GeneratedReport;
-            }
-            StatusText = "Comparing current workspace with historical record snapshot.";
-        }
+        private void SaveStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match == null) { _studentDatabase.Add(new StudentProfile { FullName = clean, ClassName = StudentClass, ParentEmail = ParentEmail, TargetGrade = TargetGrade, SupportNeeds = SupportNeeds }); } else { match.ClassName = StudentClass; match.ParentEmail = ParentEmail; match.TargetGrade = TargetGrade; match.SupportNeeds = SupportNeeds; } StudentDatabaseService.SaveStudents(_studentDatabase); RefreshCollections(); StatusText = "Profile card tracking synchronized."; }
+        private void DeleteStudent() { string clean = SanitizeControlOutput(SelectedStudentName); var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match != null) { _studentDatabase.Remove(match); StudentDatabaseService.SaveStudents(_studentDatabase); StudentClass = ParentEmail = TargetGrade = SupportNeeds = string.Empty; SelectedStudentName = string.Empty; RefreshCollections(); StatusText = "Record dropped."; } }
+        private void EnterApplication() { IsWelcomeOverlayVisible = false; }
+        private void EditWelcomeProfile() { IsWelcomeBackVisible = false; IsProfileSetupVisible = true; }
+        private void UploadLogo() { var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Images (*.png;*.jpg)|*.png;*.jpg" }; if (dialog.ShowDialog() == true) { _currentSettings.SchoolLogoPath = dialog.FileName; SecureSettingsService.SaveSettings(_currentSettings); ApplyBrandingConfiguration(); } }
+        private void CopyReportToClipboard() { if (!string.IsNullOrEmpty(GeneratedReportOutput)) Clipboard.SetText(GeneratedReportOutput); }
+        private void SaveAsWord() { if (string.IsNullOrEmpty(GeneratedReportOutput)) return; var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (dialog.ShowDialog() == true) WordExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
+        private void SaveAsPdf() { if (string.IsNullOrEmpty(GeneratedReportOutput)) return; var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "PDF (*.pdf)|*.pdf" }; if (dialog.ShowDialog() == true) PdfExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
+        private void ExportBatchWord() { if (SessionHistory.Count > 0) { var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (dialog.ShowDialog() == true) WordExportService.ExportBatch(dialog.FileName, SessionHistory.ToList()); } }
+        private void FilterHistoryByStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; var history = HistoryDatabaseService.LoadHistory().Where(x => x.StudentName.Contains(clean, StringComparison.OrdinalIgnoreCase)).ToList(); SessionHistory = new ObservableCollection<SessionRecord>(history); }
+        private void ClearHistoryFilter() { SessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>(); }
+        private void SaveCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && !_currentSettings.CurriculumTopics.Contains(clean)) { _currentSettings.CurriculumTopics.Add(clean); SecureSettingsService.SaveSettings(_currentSettings); OnPropertyChanged(nameof(CurriculumTopics)); } }
+        private void DeleteCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && _currentSettings.CurriculumTopics.Contains(clean)) { _currentSettings.CurriculumTopics.Remove(clean); SecureSettingsService.SaveSettings(_currentSettings); OnPropertyChanged(nameof(CurriculumTopics)); } }
+        private void AddCustomFrameworkTemplate() { if (!string.IsNullOrWhiteSpace(SettingsNewFrameworkName) && !string.IsNullOrWhiteSpace(SettingsNewFrameworkInstruction)) { _currentSettings.CustomFrameworks.Add(new ReportFramework { Name = SettingsNewFrameworkName, Instruction = SettingsNewFrameworkInstruction }); SecureSettingsService.SaveSettings(_currentSettings); OnPropertyChanged(nameof(CustomFrameworks)); SettingsNewFrameworkName = SettingsNewFrameworkInstruction = string.Empty; } }
+        private void CopyHistoryPreviewToCompareBox() { IsCompareRightVisible = true; if (SelectedHistoryItem != null) CompareOutputRight = SelectedHistoryItem.GeneratedReport; }
 
-        private string GetSmartFileName(string ext)
-        {
-            string sName = string.IsNullOrWhiteSpace(SelectedStudentName) ? "Student" : SanitizeControlOutput(SelectedStudentName).Replace(" ", "");
-            string topic = string.IsNullOrWhiteSpace(SelectedCurriculumTopic) ? "Report" : SanitizeControlOutput(SelectedCurriculumTopic).Replace(" ", "");
-            string date = DateTime.Now.ToString("yyyyMMdd");
-            string combined = $"{sName}_{topic}_{date}{ext}";
-            return string.Join("_", combined.Split(Path.GetInvalidFileNameChars()));
-        }
-        #endregion
-
-        #region Standard Data Property Bindings Wrappers
         public ObservableCollection<SessionRecord> SessionHistory { get => _sessionHistory; set => SetProperty(ref _sessionHistory, value); }
         public ObservableCollection<string> StudentNames { get => _studentNames; set => SetProperty(ref _studentNames, value); }
         public List<ReportFramework> CustomFrameworks => _currentSettings.CustomFrameworks;
@@ -915,110 +778,50 @@ namespace StudentReportGenerator.Services
             set => SetProperty(ref _selectedHistoryItem, value);
         }
 
+        public string SelectedThemeColorHex
+        {
+            get => _currentSettings.ThemeColorHex;
+            set
+            {
+                string cleanHex = SanitizeControlOutput(value);
+                if (!string.IsNullOrWhiteSpace(cleanHex) && _currentSettings.ThemeColorHex != cleanHex)
+                {
+                    _currentSettings.ThemeColorHex = cleanHex;
+                    OnPropertyChanged();
+                    try
+                    {
+                        NavBarBackground = (SolidColorBrush)new BrushConverter().ConvertFrom(cleanHex);
+                    }
+                    catch
+                    {
+                        NavBarBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF392A4C"));
+                    }
+                    SecureSettingsService.SaveSettings(_currentSettings);
+                }
+            }
+        }
+
         public int SelectedNavigationIndex
         {
             get => _selectedNavigationIndex;
             set
             {
-                if (SetProperty(ref _selectedNavigationIndex, value) && (_selectedNavigationIndex == 3 || _selectedNavigationIndex == 4))
+                if (SetProperty(ref _selectedNavigationIndex, value))
                 {
-                    if (!string.IsNullOrEmpty(_currentSettings.MasterPassword) && !IsSettingsUnlocked)
+                    if (_selectedNavigationIndex < 3 && !string.IsNullOrEmpty(_currentSettings.MasterPassword))
+                    {
                         IsSettingsUnlocked = false;
-                }
-            }
-        }
-
-        public string SelectedAiProvider
-        {
-            get => _currentSettings.AiProvider;
-            set
-            {
-                string cleanValue = SanitizeControlOutput(value);
-                if (_currentSettings.AiProvider != cleanValue)
-                {
-                    _currentSettings.AiProvider = cleanValue;
-                    OnPropertyChanged();
-                    EvaluateAiProviderOptions(cleanValue);
-                }
-            }
-        }
-
-        public string SelectedModelTier
-        {
-            get => _selectedModelTier;
-            set
-            {
-                string cleanValue = SanitizeControlOutput(value);
-                if (SetProperty(ref _selectedModelTier, cleanValue))
-                {
-                    string provider = SanitizeControlOutput(_currentSettings.AiProvider);
-                    if (provider.Contains("NVIDIA")) _currentSettings.NvidiaModelTier = cleanValue;
-                    else if (provider.Contains("Gemini")) _currentSettings.GeminiModelTier = cleanValue;
-                    else if (provider.Contains("OpenAI")) _currentSettings.OpenAiModelTier = cleanValue;
-                    else if (provider.Contains("Claude")) _currentSettings.ClaudeModelTier = cleanValue;
-                    SecureSettingsService.SaveSettings(_currentSettings);
-                }
-            }
-        }
-
-        public string DynamicApiKeyPassword
-        {
-            get => _dynamicApiKeyPassword;
-            set
-            {
-                if (SetProperty(ref _dynamicApiKeyPassword, value))
-                {
-                    string provider = SanitizeControlOutput(_currentSettings.AiProvider);
-                    if (provider.Contains("NVIDIA")) _currentSettings.NvidiaApiKey = value;
-                    else if (provider.Contains("Gemini")) _currentSettings.GeminiApiKey = value;
-                    else if (provider.Contains("OpenAI")) _currentSettings.OpenAiApiKey = value;
-                    else if (provider.Contains("Claude")) _currentSettings.ClaudeApiKey = value;
-                    SecureSettingsService.SaveSettings(_currentSettings);
-                }
-            }
-        }
-
-        public bool IsDarkMode
-        {
-            get => _currentSettings.IsDarkMode;
-            set
-            {
-                if (_currentSettings.IsDarkMode != value)
-                {
-                    _currentSettings.IsDarkMode = value;
-                    OnPropertyChanged();
-                    var mainWin = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault();
-                    if (mainWin != null)
-                    {
-                        var type = mainWin.GetType();
-                        var method = type.GetMethod("ApplyDarkMode", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                        method?.Invoke(mainWin, new object[] { value });
-                    }
-                    SecureSettingsService.SaveSettings(_currentSettings);
-                }
-            }
-        }
-
-        public string SelectedStudentName
-        {
-            get => _selectedStudentName;
-            set
-            {
-                string cleanValue = SanitizeControlOutput(value);
-                if (SetProperty(ref _selectedStudentName, cleanValue))
-                {
-                    var match = _studentDatabase.FirstOrDefault(x => x.FullName == cleanValue);
-                    if (match != null)
-                    {
-                        StudentClass = match.ClassName;
-                        ParentEmail = match.ParentEmail;
-                        TargetGrade = match.TargetGrade;
-                        SupportNeeds = match.SupportNeeds;
                     }
                 }
             }
         }
 
+        public string SelectedAiProvider { get => _currentSettings.AiProvider; set { string clean = SanitizeControlOutput(value); if (_currentSettings.AiProvider != clean) { _currentSettings.AiProvider = clean; OnPropertyChanged(); EvaluateAiProviderOptions(clean); } } }
+        public string SelectedModelTier { get => _selectedModelTier; set { string clean = SanitizeControlOutput(value); if (SetProperty(ref _selectedModelTier, clean)) { string p = SanitizeControlOutput(_currentSettings.AiProvider); if (p.Contains("NVIDIA")) _currentSettings.NvidiaModelTier = clean; else if (p.Contains("Gemini")) _currentSettings.GeminiModelTier = clean; else if (p.Contains("OpenAI")) _currentSettings.OpenAiModelTier = clean; else if (p.Contains("Claude")) _currentSettings.ClaudeModelTier = clean; SecureSettingsService.SaveSettings(_currentSettings); } } }
+        public string DynamicApiKeyPassword { get => ConvertToPlainString(_dynamicSecureApiKey); set { _dynamicSecureApiKey = ConvertToSecureString(value); OnPropertyChanged(); } }
+        public bool IsDarkMode { get => _currentSettings.IsDarkMode; set { if (_currentSettings.IsDarkMode != value) { _currentSettings.IsDarkMode = value; OnPropertyChanged(); var win = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault(); if (win != null) { var method = win.GetType().GetMethod("ApplyDarkMode", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic); method?.Invoke(win, new object[] { value }); } } } }
+
+        public string SelectedStudentName { get => _selectedStudentName; set { string clean = SanitizeControlOutput(value); if (SetProperty(ref _selectedStudentName, clean)) { var m = _studentDatabase.FirstOrDefault(x => x.FullName == clean); if (m != null) { StudentClass = m.ClassName; ParentEmail = m.ParentEmail; TargetGrade = m.TargetGrade; SupportNeeds = m.SupportNeeds; } } } }
         public string StudentClass { get => _studentClass; set => SetProperty(ref _studentClass, value); }
         public string TargetGrade { get => _targetGrade; set => SetProperty(ref _targetGrade, value); }
         public string SupportNeeds { get => _supportNeeds; set => SetProperty(ref _supportNeeds, value); }
@@ -1046,10 +849,10 @@ namespace StudentReportGenerator.Services
         public string SettingsSchoolName { get => _settingsSchoolName; set => SetProperty(ref _settingsSchoolName, value); }
         public string SettingsTeacherName { get => _settingsTeacherName; set => SetProperty(ref _settingsTeacherName, value); }
         public string SettingsSmtpEmail { get => _settingsSmtpEmail; set => SetProperty(ref _settingsSmtpEmail, value); }
-        public string SettingsSmtpPassword { get => _settingsSmtpPassword; set => SetProperty(ref _settingsSmtpPassword, value); }
+
+        public string SettingsSmtpPassword { get => ConvertToPlainString(_settingsSmtpSecurePassword); set { _settingsSmtpSecurePassword = ConvertToSecureString(value); OnPropertyChanged(); } }
         public string SettingsMasterPassword { get => _settingsMasterPassword; set => SetProperty(ref _settingsMasterPassword, value); }
         public string SettingsUnlockPassword { get => _settingsUnlockPassword; set => SetProperty(ref _settingsUnlockPassword, value); }
-        public ComboBoxItemWrapper? SelectedThemeColor { get => _selectedThemeColor; set => SetProperty(ref _selectedThemeColor, value); }
         public string SettingsNewFrameworkName { get => _settingsNewFrameworkName; set => SetProperty(ref _settingsNewFrameworkName, value); }
         public string SettingsNewFrameworkInstruction { get => _settingsNewFrameworkInstruction; set => SetProperty(ref _settingsNewFrameworkInstruction, value); }
         public string DynamicApiKeyLabel { get => _dynamicApiKeyLabel; set => SetProperty(ref _dynamicApiKeyLabel, value); }
@@ -1063,7 +866,8 @@ namespace StudentReportGenerator.Services
         public bool IsWelcomeBackVisible { get => _isWelcomeBackVisible; set => SetProperty(ref _isWelcomeBackVisible, value); }
         public bool IsSettingsUnlocked { get => _isSettingsUnlocked; set => SetProperty(ref _isSettingsUnlocked, value); }
         public string StatusText { get => _statusText; set => SetProperty(ref _statusText, value); }
-        public bool IsGenerating { get => _isGenerating; set => SetProperty(ref _isGenerating, value); }
+        public bool IsGenerating { get => _isGenerating; set { if (SetProperty(ref _isGenerating, value)) { (GenerateSingleCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (EmailReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (RunComparisonCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (PreviewToneCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
+        public bool IsBatchModeActive { get => _isBatchModeActive; set { if (SetProperty(ref _isBatchModeActive, value)) { (GenerateBatchCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
         public string HoursSavedDisplay { get => _hoursSavedDisplay; set => SetProperty(ref _hoursSavedDisplay, value); }
         public string TokensUsedDisplay { get => _tokensUsedDisplay; set => SetProperty(ref _tokensUsedDisplay, value); }
         public string NvidiaCountDisplay { get => _nvidiaCountDisplay; set => SetProperty(ref _nvidiaCountDisplay, value); }

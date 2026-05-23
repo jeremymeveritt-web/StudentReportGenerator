@@ -1,26 +1,60 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using StudentReportGenerator.Services;
 
 namespace StudentReportGenerator
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml. Cleaned and decoupled for production-ready MVVM.
-    /// </summary>
     public partial class MainWindow : Window
     {
         public MainWindow()
         {
             InitializeComponent();
 
-            // Wire up the decentralized MainViewModel as the primary DataContext pipeline
-            this.DataContext = new MainViewModel();
+            var vm = new MainViewModel();
+            this.DataContext = vm;
+
+            // Wire up notification event trackers to sync unmanaged clearing functions safely
+            vm.PropertyChanged += OnViewModelPropertyChanged;
         }
 
-        /// <summary>
-        /// Invoked dynamically by the MainViewModel when a user flips the theme preference toggle state.
-        /// </summary>
+        private void PbSmtpPassword_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel vm)
+                vm.SettingsSmtpPassword = ((PasswordBox)sender).Password;
+        }
+
+        private void PbMasterPassword_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel vm)
+                vm.SettingsMasterPassword = ((PasswordBox)sender).Password;
+        }
+
+        private void PbUnlockPassword_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel vm)
+                vm.SettingsUnlockPassword = ((PasswordBox)sender).Password;
+        }
+
+        private void PbApiKey_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel vm)
+                vm.DynamicApiKeyPassword = ((PasswordBox)sender).Password;
+        }
+
+        private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(MainViewModel.SettingsUnlockPassword) &&
+                DataContext is MainViewModel vm &&
+                string.IsNullOrEmpty(vm.SettingsUnlockPassword) &&
+                pbUnlockPassword != null)
+            {
+                pbUnlockPassword.Clear();
+            }
+        }
+
         private void ApplyDarkMode(bool isDark)
         {
             if (isDark)

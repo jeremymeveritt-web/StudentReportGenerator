@@ -4,7 +4,7 @@ using System.Windows.Input;
 namespace StudentReportGenerator.Services
 {
     /// <summary>
-    /// Delivers decoupled synchronization mapping hooks binding XAML user interface control events directly to ViewModel methods.
+    /// Handles standard synchronous button clicks and UI commands.
     /// </summary>
     public class RelayCommand : ICommand
     {

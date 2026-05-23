@@ -14,26 +14,36 @@ namespace StudentReportGenerator.Models
         public string SchoolName { get; set; } = string.Empty;
         public string TeacherSignoff { get; set; } = string.Empty;
         public string SelectedModel { get; set; } = string.Empty;
-
-        // Context Fields for the AI
         public string TargetGrade { get; set; } = string.Empty;
         public string SupportNeeds { get; set; } = string.Empty;
     }
 
     public class ReportResponse
     {
-        public string GeneratedReport { get; set; } = string.Empty;
+        private string _generatedReport = string.Empty;
+
+        // Resolves Bug #6: Defensive coalescing pass ensures null is never passed to display tracking properties
+        public string GeneratedReport
+        {
+            get => _generatedReport;
+            set => _generatedReport = value ?? string.Empty;
+        }
         public bool IsSuccess { get; set; }
         public string ErrorMessage { get; set; } = string.Empty;
     }
 
     public class SessionRecord
     {
+        private string _generatedReport = string.Empty;
         public string StudentName { get; set; } = string.Empty;
-        public string GeneratedReport { get; set; } = string.Empty;
+
+        public string GeneratedReport
+        {
+            get => _generatedReport;
+            set => _generatedReport = value ?? string.Empty;
+        }
         public DateTime Timestamp { get; set; }
 
-        // Fix applied: Dynamically clears out old bracket indicators to keep the display clean
         public string DisplayText
         {
             get
@@ -57,8 +67,6 @@ namespace StudentReportGenerator.Models
         public string FullName { get; set; } = string.Empty;
         public string ClassName { get; set; } = string.Empty;
         public string ParentEmail { get; set; } = string.Empty;
-
-        // Expanded Database Fields
         public string TargetGrade { get; set; } = string.Empty;
         public string SupportNeeds { get; set; } = string.Empty;
     }
@@ -70,24 +78,22 @@ namespace StudentReportGenerator.Models
         public string SchoolName { get; set; } = "Enter School Name";
         public string TeacherSignoff { get; set; } = "Mr. / Ms. Teacher";
         public string AiProvider { get; set; } = "NVIDIA NIM (Free)";
-
         public string GeminiModelTier { get; set; } = "gemini-2.5-flash";
         public string OpenAiModelTier { get; set; } = "gpt-4o-mini";
         public string ClaudeModelTier { get; set; } = "claude-3-haiku-20240307";
         public string NvidiaModelTier { get; set; } = "meta/llama-3.1-405b-instruct";
-
         public string ThemeColorHex { get; set; } = "#FF392A4C";
         public string SchoolLogoPath { get; set; } = string.Empty;
-
         public string GeminiApiKey { get; set; } = string.Empty;
         public string OpenAiApiKey { get; set; } = string.Empty;
         public string ClaudeApiKey { get; set; } = string.Empty;
         public string NvidiaApiKey { get; set; } = string.Empty;
         public string MasterPassword { get; set; } = string.Empty;
-
         public string SmtpServer { get; set; } = "smtp.gmail.com";
         public int SmtpPort { get; set; } = 587;
         public string SmtpEmail { get; set; } = string.Empty;
+
+        // Bug #2 Note: Persisted in DPAPI dat blob, but securely cleared from memory fields upon VM instantiation tracks
         public string SmtpPassword { get; set; } = string.Empty;
 
         public List<ReportFramework> CustomFrameworks { get; set; } = new List<ReportFramework>
@@ -106,7 +112,6 @@ namespace StudentReportGenerator.Models
 
         public int TotalReportsGenerated { get; set; } = 0;
         public long TotalTokensEstimated { get; set; } = 0;
-
         public int GeminiReportsCount { get; set; } = 0;
         public int OpenAiReportsCount { get; set; } = 0;
         public int ClaudeReportsCount { get; set; } = 0;

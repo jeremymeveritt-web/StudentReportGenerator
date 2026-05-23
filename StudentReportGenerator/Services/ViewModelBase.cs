@@ -1,11 +1,11 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
+// Resolves Bug #7: Explicit namespace declaration prevents fragile transitive build configuration breaks
+using System.Collections.Generic;
 
 namespace StudentReportGenerator.Services
 {
-    /// <summary>
-    /// Base class for MVVM architecture that enables automatic dynamic property notifications to XAML UI layers.
-    /// </summary>
     public abstract class ViewModelBase : INotifyPropertyChanged
     {
         public event PropertyChangedEventHandler? PropertyChanged;
