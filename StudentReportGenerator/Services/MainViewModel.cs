@@ -844,7 +844,6 @@ namespace StudentReportGenerator.Services
         public bool IsContributionRare { get => _isContributionRare; set => SetProperty(ref _isContributionRare, value); }
         public bool IsContributionNever { get => _isContributionNever; set => SetProperty(ref _isContributionNever, value); }
         public string BatchDataInput { get => _batchDataInput; set => SetProperty(ref _batchDataInput, value); }
-        public bool IsBatchModeActive { get => _isBatchModeActive; set => SetProperty(ref _isBatchModeActive, value); }
         public string CompareStudentName { get => _compareStudentName; set => SetProperty(ref _compareStudentName, value); }
         public string CompareNotes { get => _compareNotes; set => SetProperty(ref _compareNotes, value); }
         public string CompareProvider1 { get => _compareProvider1; set => SetProperty(ref _compareProvider1, value); }
@@ -854,7 +853,6 @@ namespace StudentReportGenerator.Services
         public string SettingsSchoolName { get => _settingsSchoolName; set => SetProperty(ref _settingsSchoolName, value); }
         public string SettingsTeacherName { get => _settingsTeacherName; set => SetProperty(ref _settingsTeacherName, value); }
         public string SettingsSmtpEmail { get => _settingsSmtpEmail; set => SetProperty(ref _settingsSmtpEmail, value); }
-
         public string SettingsSmtpPassword { get => ConvertToPlainString(_settingsSmtpSecurePassword); set { _settingsSmtpSecurePassword = ConvertToSecureString(value); OnPropertyChanged(); } }
         public string SettingsMasterPassword { get => _settingsMasterPassword; set => SetProperty(ref _settingsMasterPassword, value); }
         public string SettingsUnlockPassword { get => _settingsUnlockPassword; set => SetProperty(ref _settingsUnlockPassword, value); }
