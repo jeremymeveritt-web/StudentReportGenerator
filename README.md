@@ -1,7 +1,3 @@
-No problem at all! Adding emojis is a great way to make documentation feel more approachable and engaging. 🎨
-
-Here is the updated, emoji-enhanced README.md for FacultyFlow AI. You can copy and paste this directly into your file! 🚀
-
 FacultyFlow AI 🤖 — Student Report Generator
 FacultyFlow AI is a high-performance desktop application designed to streamline the academic reporting process for teachers. By leveraging modern AI neural networks 🧠, it automates the creation of personalized, high-quality student reports, allowing educators to focus more on teaching and less on administrative tasks. 📚✨
 
