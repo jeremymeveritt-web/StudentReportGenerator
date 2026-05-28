@@ -414,9 +414,31 @@
 
                                 <TextBlock Text="SECURITY ACCESS OVERRIDE" FontWeight="Bold" Foreground="#F44336" Margin="0,10,0,10"/>
                                 <TextBlock Text="Master Settings Password:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                                <PasswordBox x:Name="pbMasterPassword" Height="35" Padding="8" Margin="0,0,0,25" PasswordChanged="PbMasterPassword_PasswordChanged"/>
+                                <PasswordBox x:Name="pbMasterPassword" Height="35" Padding="8" Margin="0,0,0,10" PasswordChanged="PbMasterPassword_PasswordChanged">
+                                    <PasswordBox.Style>
+                                        <Style TargetType="PasswordBox">
+                                            <Setter Property="Background" Value="{DynamicResource ThemeInputBg}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource ThemeText}"/>
+                                            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorder}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding DisableMasterPassword}" Value="True">
+                                                    <Setter Property="IsEnabled" Value="False"/>
+                                                    <Setter Property="Opacity" Value="0.5"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </PasswordBox.Style>
+                                </PasswordBox>
+
+                                <CheckBox Content="Disable password protection (removes master lock)" 
+                                          IsChecked="{Binding DisableMasterPassword}" 
+                                          FontWeight="SemiBold" Foreground="#F44336" Margin="0,0,0,25"/>
 
                                 <Button Command="{Binding SaveProfileSettingsCommand}" Content="Save System Configurations" Height="45" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FF4CAF50" Margin="0,10,0,0"/>
+
+                                <TextBlock Text="By using FacultyFlow AI, you acknowledge that student names and notes are transmitted securely via TLS to the selected AI provider (OpenAI, Google, Anthropic, or NVIDIA) for the sole purpose of report generation. No data is used to train public models. Local data is encrypted via Windows DPAPI." 
+                                           TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource ThemeMutedText}" Margin="0,20,0,0" TextAlignment="Center"/>
+
                             </StackPanel>
                         </ScrollViewer>
                         <Border Background="{DynamicResource ThemeAppBg}" Visibility="{Binding IsSettingsUnlocked, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}" Panel.ZIndex="10">
@@ -634,14 +656,11 @@
 
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
-                            <!-- 1. Store the MainViewModel (DataContext of the ListBox) inside the Tag property of the row -->
                             <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}" />
 
                             <Setter Property="ContextMenu">
                                 <Setter.Value>
                                     <ContextMenu>
-                                        <!-- 2. Bind the Command to the ViewModel (stored in the Tag) -->
-                                        <!-- 3. Bind the Parameter to the specific row's data (the SessionRecord) -->
                                         <MenuItem Header="Delete Record" 
                                   Command="{Binding PlacementTarget.Tag.DeleteHistoryCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                   CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
@@ -669,7 +688,7 @@
         <Border x:Name="overlayWelcome" Visibility="{Binding IsWelcomeOverlayVisible, Converter={StaticResource BoolToVis}}" Grid.Row="0" Grid.RowSpan="2" Grid.ColumnSpan="3" Background="#F2000000" Panel.ZIndex="100">
             <Border Background="{DynamicResource ThemeCardBg}" CornerRadius="12" Width="720" Height="580" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="35">
                 <StackPanel>
-                    <TextBlock Text="👋 Welcome to AI Student Report Generator" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource ThemeText}" TextAlignment="Center" Margin="0,0,0,10"/>
+                    <TextBlock Text="👋 Welcome to FacultyAI" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource ThemeText}" TextAlignment="Center" Margin="0,0,0,10"/>
 
                     <StackPanel Visibility="{Binding IsProfileSetupVisible, Converter={StaticResource BoolToVis}}" Margin="0,5,0,15">
                         <TextBlock Text="Configure teacher signature contexts details here." FontSize="14" Foreground="{DynamicResource ThemeMutedText}" TextAlignment="Center" Margin="0,0,0,15"/>

@@ -25,7 +25,7 @@ namespace StudentReportGenerator.Services
             {
                 string endpoint = "https://api.openai.com/v1/chat/completions";
                 string activeModel = string.IsNullOrWhiteSpace(request.SelectedModel) ? "gpt-4o-mini" : request.SelectedModel;
-                string prompt = BuildPrompt(request);
+                string securePrompt = PromptBuilderService.BuildSecurePrompt(request);
 
                 var payload = new
                 {
@@ -33,7 +33,7 @@ namespace StudentReportGenerator.Services
                     messages = new[]
                     {
                         new { role = "system", content = "You are a professional school teacher writing end-of-term update reports directly to parents about their child." },
-                        new { role = "user", content = prompt }
+                        new { role = "user", content = securePrompt }
                     },
                     temperature = 0.7
                 };

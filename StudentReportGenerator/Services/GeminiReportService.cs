@@ -25,13 +25,13 @@ namespace StudentReportGenerator.Services
                 string activeModel = string.IsNullOrWhiteSpace(request.SelectedModel) ? "gemini-1.5-flash" : request.SelectedModel;
                 string endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{activeModel}:generateContent?key={_apiKey}";
 
-                string prompt = BuildPrompt(request);
+                string securePrompt = PromptBuilderService.BuildSecurePrompt(request);
 
                 var payload = new
                 {
                     contents = new[]
                     {
-                        new { parts = new[] { new { text = prompt } } }
+                        new { parts = new[] { new { text = securePrompt } } }
                     }
                 };
 

@@ -25,14 +25,14 @@ namespace StudentReportGenerator.Services
             {
                 string endpoint = "https://integrate.api.nvidia.com/v1/chat/completions";
                 string activeModel = string.IsNullOrWhiteSpace(request.SelectedModel) ? "meta/llama-3.1-405b-instruct" : request.SelectedModel;
-                string prompt = BuildPrompt(request);
+                string securePrompt = PromptBuilderService.BuildSecurePrompt(request);
 
                 var payload = new
                 {
                     model = activeModel,
                     messages = new[]
                     {
-                        new { role = "user", content = prompt }
+                        new { role = "user", content = securePrompt }
                     },
                     max_tokens = 1024,
                     temperature = 0.5,

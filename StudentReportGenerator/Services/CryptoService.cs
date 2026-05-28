@@ -47,5 +47,30 @@ namespace StudentReportGenerator.Services
                 return false; // Failsafe if the hash is corrupted
             }
         }
+            // --- FIELD LEVEL ENCRYPTION FOR API KEYS & SMTP PASSWORDS ---
+        private static readonly byte[] FieldEntropy = System.Text.Encoding.UTF8.GetBytes("FacultyFlow_API_Secure_V1");
+
+        public static string EncryptSecret(string plainText)
+        {
+            if (string.IsNullOrWhiteSpace(plainText)) return string.Empty;
+            byte[] plainBytes = System.Text.Encoding.UTF8.GetBytes(plainText);
+            byte[] encryptedBytes = ProtectedData.Protect(plainBytes, FieldEntropy, DataProtectionScope.CurrentUser);
+            return Convert.ToBase64String(encryptedBytes);
+        }
+
+        public static string DecryptSecret(string encryptedBase64)
+        {
+            if (string.IsNullOrWhiteSpace(encryptedBase64)) return string.Empty;
+            try
+            {
+                byte[] encryptedBytes = Convert.FromBase64String(encryptedBase64);
+                byte[] plainBytes = ProtectedData.Unprotect(encryptedBytes, FieldEntropy, DataProtectionScope.CurrentUser);
+                return System.Text.Encoding.UTF8.GetString(plainBytes);
+            }
+            catch
+            {
+                return string.Empty; 
+            }
+        }
     }
-}
+  }

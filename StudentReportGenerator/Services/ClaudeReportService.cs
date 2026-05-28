@@ -24,7 +24,7 @@ namespace StudentReportGenerator.Services
             {
                 string endpoint = "https://api.anthropic.com/v1/messages";
                 string activeModel = string.IsNullOrWhiteSpace(request.SelectedModel) ? "claude-3-haiku-20240307" : request.SelectedModel;
-                string prompt = BuildPrompt(request);
+                string securePrompt = PromptBuilderService.BuildSecurePrompt(request);
 
                 var payload = new
                 {
@@ -33,7 +33,7 @@ namespace StudentReportGenerator.Services
                     system = "You are a professional school teacher writing academic update reports directly to parents about their child. Do not write directly to the student.",
                     messages = new[]
                     {
-                        new { role = "user", content = prompt }
+                        new { role = "user", content = securePrompt }
                     }
                 };
 

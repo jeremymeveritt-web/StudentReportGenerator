@@ -203,7 +203,7 @@ namespace StudentReportGenerator.Services
             SettingsSmtpEmail = _currentSettings.SmtpEmail;
             IsDarkMode = _currentSettings.IsDarkMode;
 
-            _settingsSmtpSecurePassword = ConvertToSecureString(_currentSettings.SmtpPassword);
+            _settingsSmtpSecurePassword = ConvertToSecureString(CryptoService.DecryptSecret(_currentSettings.SmtpPassword));
             _currentSettings.SmtpPassword = string.Empty;
 
             ApplyBrandingConfiguration();
@@ -224,7 +224,7 @@ namespace StudentReportGenerator.Services
             if (cleanProvider.Contains("NVIDIA"))
             {
                 DynamicApiKeyLabel = "NVIDIA Key:";
-                _dynamicSecureApiKey = ConvertToSecureString(_currentSettings.NvidiaApiKey);
+                _dynamicSecureApiKey = ConvertToSecureString(CryptoService.DecryptSecret(_currentSettings.NvidiaApiKey));
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Llama 3.1 405B (Smarter)", Tag = "meta/llama-3.1-405b-instruct" });
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Llama 3.1 70B (Balanced)", Tag = "meta/llama-3.1-70b-instruct" });
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Nemotron 70B (NVIDIA)", Tag = "nvidia/nemotron-4-340b-instruct" });
@@ -234,7 +234,7 @@ namespace StudentReportGenerator.Services
             else if (cleanProvider.Contains("Gemini"))
             {
                 DynamicApiKeyLabel = "Gemini Key:";
-                _dynamicSecureApiKey = ConvertToSecureString(_currentSettings.GeminiApiKey);
+                _dynamicSecureApiKey = ConvertToSecureString(CryptoService.DecryptSecret(_currentSettings.GeminiApiKey));
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Gemini 2.5 Flash", Tag = "gemini-2.5-flash" });
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Gemini 2.5 Pro", Tag = "gemini-2.5-pro" });
                 SelectedModelTier = _currentSettings.GeminiModelTier;
@@ -242,7 +242,7 @@ namespace StudentReportGenerator.Services
             else if (cleanProvider.Contains("OpenAI"))
             {
                 DynamicApiKeyLabel = "OpenAI Key:";
-                _dynamicSecureApiKey = ConvertToSecureString(_currentSettings.OpenAiApiKey);
+                _dynamicSecureApiKey = ConvertToSecureString(CryptoService.DecryptSecret(_currentSettings.OpenAiApiKey));
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "GPT-4o Mini", Tag = "gpt-4o-mini" });
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "GPT-4o", Tag = "gpt-4o" });
                 SelectedModelTier = _currentSettings.OpenAiModelTier;
@@ -250,7 +250,7 @@ namespace StudentReportGenerator.Services
             else if (cleanProvider.Contains("Claude"))
             {
                 DynamicApiKeyLabel = "Claude Key:";
-                _dynamicSecureApiKey = ConvertToSecureString(_currentSettings.ClaudeApiKey);
+                _dynamicSecureApiKey = ConvertToSecureString(CryptoService.DecryptSecret(_currentSettings.ClaudeApiKey));
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Claude 3 Haiku", Tag = "claude-3-haiku-20240307" });
                 ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Claude 3.5 Sonnet", Tag = "claude-3-5-sonnet-20240620" });
                 SelectedModelTier = _currentSettings.ClaudeModelTier;
@@ -452,20 +452,16 @@ namespace StudentReportGenerator.Services
                     else if (cleanProvider.Contains("Claude")) _currentSettings.ClaudeReportsCount++;
                     else _currentSettings.GeminiReportsCount++;
 
-                    _currentSettings.SmtpPassword = ConvertToPlainString(_settingsSmtpSecurePassword);
-                    _currentSettings.NvidiaApiKey = cleanProvider.Contains("NVIDIA") ? activeKey : _currentSettings.NvidiaApiKey;
-                    _currentSettings.GeminiApiKey = cleanProvider.Contains("Gemini") ? activeKey : _currentSettings.GeminiApiKey;
-                    _currentSettings.OpenAiApiKey = cleanProvider.Contains("OpenAI") ? activeKey : _currentSettings.OpenAiApiKey;
-                    _currentSettings.ClaudeApiKey = cleanProvider.Contains("Claude") ? activeKey : _currentSettings.ClaudeApiKey;
+                    _currentSettings.SmtpPassword = CryptoService.EncryptSecret(ConvertToPlainString(_settingsSmtpSecurePassword));
+
+                    if (cleanProvider.Contains("NVIDIA")) _currentSettings.NvidiaApiKey = CryptoService.EncryptSecret(activeKey);
+                    if (cleanProvider.Contains("Gemini")) _currentSettings.GeminiApiKey = CryptoService.EncryptSecret(activeKey);
+                    if (cleanProvider.Contains("OpenAI")) _currentSettings.OpenAiApiKey = CryptoService.EncryptSecret(activeKey);
+                    if (cleanProvider.Contains("Claude")) _currentSettings.ClaudeApiKey = CryptoService.EncryptSecret(activeKey);
 
                     SecureSettingsService.SaveSettings(_currentSettings);
 
-                    _currentSettings.SmtpPassword = string.Empty;
-                    _currentSettings.NvidiaApiKey = string.Empty;
-                    _currentSettings.GeminiApiKey = string.Empty;
-                    _currentSettings.OpenAiApiKey = string.Empty;
-                    _currentSettings.ClaudeApiKey = string.Empty;
-
+                    
                     UpdateDashboardMetricsDisplay();
                     StatusText = "Ready.";
                     return true;
@@ -636,8 +632,8 @@ namespace StudentReportGenerator.Services
             }
             else if (!string.IsNullOrEmpty(SettingsMasterPassword))
             {
-                // NEW: We now hash the password before saving it to settings!
-                _currentSettings.MasterPassword = CryptoService.HashPassword(SettingsMasterPassword);
+                
+                _currentSettings.SmtpPassword = CryptoService.EncryptSecret(ConvertToPlainString(_settingsSmtpSecurePassword)); ;
             }
         }
 
