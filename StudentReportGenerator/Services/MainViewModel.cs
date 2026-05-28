@@ -59,6 +59,7 @@ namespace StudentReportGenerator.Services
         private bool _isContributionOccasional = false;
         private bool _isContributionRare = false;
         private bool _isContributionNever = false;
+        private bool _disableMasterPassword = false;
 
         // Batch Mode Form State
         private string _batchDataInput = string.Empty;
@@ -627,14 +628,17 @@ namespace StudentReportGenerator.Services
             _currentSettings.SmtpEmail = SettingsSmtpEmail;
 
             _currentSettings.SmtpPassword = ConvertToPlainString(_settingsSmtpSecurePassword);
-            if (!string.IsNullOrEmpty(SettingsMasterPassword))
-                _currentSettings.MasterPassword = SettingsMasterPassword;
-
-            SecureSettingsService.SaveSettings(_currentSettings);
-
-            _currentSettings.SmtpPassword = string.Empty;
-            ApplyBrandingConfiguration();
-            StatusText = "System states saved cleanly.";
+            // Inside SaveProfileSettings(), replace the master password IF block with this:
+            if (DisableMasterPassword)
+            {
+                _currentSettings.MasterPassword = string.Empty;
+                SettingsMasterPassword = string.Empty;
+            }
+            else if (!string.IsNullOrEmpty(SettingsMasterPassword))
+            {
+                // NEW: We now hash the password before saving it to settings!
+                _currentSettings.MasterPassword = CryptoService.HashPassword(SettingsMasterPassword);
+            }
         }
 
         private void UnlockSettings()
@@ -644,27 +648,12 @@ namespace StudentReportGenerator.Services
                 IsSettingsUnlocked = true;
                 return;
             }
-
-            if (CryptographicEquals(SettingsUnlockPassword, _currentSettings.MasterPassword))
+            if (CryptoService.VerifyPassword(SettingsUnlockPassword, _currentSettings.MasterPassword))
             {
                 IsSettingsUnlocked = true;
                 SettingsUnlockPassword = string.Empty;
                 StatusText = "Configurations portal open.";
             }
-            else
-            {
-                MessageBox.Show("Incorrect validation password key.", "Access Denied", MessageBoxButton.OK, MessageBoxImage.Warning);
-                SettingsUnlockPassword = string.Empty;
-            }
-        }
-
-        private static bool CryptographicEquals(string a, string b)
-        {
-            if (a == null || b == null) return false;
-            int diff = a.Length ^ b.Length;
-            int len = Math.Min(a.Length, b.Length);
-            for (int i = 0; i < len; i++) diff |= a[i] ^ b[i];
-            return diff == 0;
         }
 
         private void ImportBatchCsv()
@@ -870,6 +859,7 @@ namespace StudentReportGenerator.Services
         public bool IsProfileSetupVisible { get => _isProfileSetupVisible; set => SetProperty(ref _isProfileSetupVisible, value); }
         public bool IsWelcomeBackVisible { get => _isWelcomeBackVisible; set => SetProperty(ref _isWelcomeBackVisible, value); }
         public bool IsSettingsUnlocked { get => _isSettingsUnlocked; set => SetProperty(ref _isSettingsUnlocked, value); }
+        public bool DisableMasterPassword { get => _disableMasterPassword; set => SetProperty(ref _disableMasterPassword, value); }
         public string StatusText { get => _statusText; set => SetProperty(ref _statusText, value); }
         public bool IsGenerating { get => _isGenerating; set { if (SetProperty(ref _isGenerating, value)) { (GenerateSingleCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (EmailReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (RunComparisonCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (PreviewToneCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
         public bool IsBatchModeActive { get => _isBatchModeActive; set { if (SetProperty(ref _isBatchModeActive, value)) { (GenerateBatchCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
