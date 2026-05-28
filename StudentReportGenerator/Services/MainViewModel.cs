@@ -132,6 +132,7 @@ namespace StudentReportGenerator.Services
         public ICommand AddFrameworkCommand { get; }
         public ICommand PreviewToneCommand { get; }
         public ICommand CompareHistoryCommand { get; }
+        public ICommand DeleteHistoryCommand { get; } // Feature Integration: Context Menu Right-Click Deletion Hook
 
         public MainViewModel()
         {
@@ -143,12 +144,10 @@ namespace StudentReportGenerator.Services
             EnterAppCommand = new RelayCommand(_ => EnterApplication());
             EditWelcomeProfileCommand = new RelayCommand(_ => EditWelcomeProfile());
             UploadLogoCommand = new RelayCommand(_ => UploadLogo());
-            CopyReportCommand = new RelayCommand(_ => CopyReportToClipboard());
-            SaveWordCommand = new RelayCommand(_ => SaveAsWord());
-            SavePdfCommand = new RelayCommand(_ => SaveAsPdf());
-            ImportBatchCsvCommand = new RelayCommand(_ => ImportBatchCsv());
+            CopyReportCommand = new RelayCommand(_ => CopyReportToClipboard(), _ => !string.IsNullOrWhiteSpace(GeneratedReportOutput));
+            SaveWordCommand = new RelayCommand(_ => SaveAsWord(), _ => !string.IsNullOrWhiteSpace(GeneratedReportOutput));
+            SavePdfCommand = new RelayCommand(_ => SaveAsPdf(), _ => !string.IsNullOrWhiteSpace(GeneratedReportOutput));
             EmailReportCommand = new AsyncRelayCommand(_ => EmailReportAsync(), _ => !IsGenerating && !string.IsNullOrWhiteSpace(GeneratedReportOutput));
-            GenerateBatchCommand = new AsyncRelayCommand(_ => GenerateBatchAsync(),_ => !_isBatchModeActive);
             CancelBatchCommand = new RelayCommand(_ => CancelBatchGeneration());
             ExportBatchWordCommand = new RelayCommand(_ => ExportBatchWord());
             RunComparisonCommand = new AsyncRelayCommand(_ => RunSideBySideComparisonAsync(), _ => !IsGenerating);
@@ -158,8 +157,8 @@ namespace StudentReportGenerator.Services
             SaveCurriculumCommand = new RelayCommand(_ => SaveCurriculumTopic());
             DeleteCurriculumCommand = new RelayCommand(_ => DeleteCurriculumTopic());
             AddFrameworkCommand = new RelayCommand(_ => AddCustomFrameworkTemplate());
-            PreviewToneCommand = new AsyncRelayCommand(_ => PreviewToneAsync(), _ => !IsGenerating);
             CompareHistoryCommand = new RelayCommand(_ => CopyHistoryPreviewToCompareBox());
+            DeleteHistoryCommand = new RelayCommand(DeleteHistoryRecord); // Initialized Sync Right-Click Command Mapping
 
             _sessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>();
             _studentDatabase = StudentDatabaseService.LoadStudents() ?? new List<StudentProfile>();
@@ -182,6 +181,20 @@ namespace StudentReportGenerator.Services
             {
                 IsProfileSetupVisible = false;
                 IsWelcomeBackVisible = true;
+            }
+
+            // Feature Integration: Populates a rich out-of-the-box palette of 5 distinct default tone template profiles
+            if (_currentSettings.CustomFrameworks == null || _currentSettings.CustomFrameworks.Count < 4)
+            {
+                _currentSettings.CustomFrameworks = new List<ReportFramework>
+                {
+                    new ReportFramework { Name = "Formal & Academic", Instruction = "Use highly formal, rigorous, and structural academic phrase structures." },
+                    new ReportFramework { Name = "Encouraging & Warm", Instruction = "Use a highly supportive, emotionally warm, and motivational tone framework." },
+                    new ReportFramework { Name = "Concise & Direct", Instruction = "Be extremely brief, factual, punchy, and structured straight to the point." },
+                    new ReportFramework { Name = "Developmental Focus", Instruction = "Highlight growth vectors, future target points, and constructive strategy tracks." },
+                    new ReportFramework { Name = "Creative & Enthusiastic", Instruction = "Incorporate highly energetic, collaborative, and lively structural descriptive tokens." }
+                };
+                SecureSettingsService.SaveSettings(_currentSettings);
             }
 
             SettingsSchoolName = _currentSettings.SchoolName;
@@ -477,13 +490,22 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        private void DeleteHistoryRecord(object? parameter)
+        {
+            if (parameter is SessionRecord record)
+            {
+                if (SessionHistory.Contains(record))
+                {
+                    SessionHistory.Remove(record);
+                    HistoryDatabaseService.SaveHistory(SessionHistory);
+                    StatusText = "History record deleted successfully.";
+                }
+            }
+        }
+
         private async Task GenerateBatchAsync()
         {
-            if (string.IsNullOrWhiteSpace(BatchDataInput))
-            {
-                MessageBox.Show("Please provide or load roster elements data strings inside the entry box before executing batch generation operations.", "Roster Empty", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
+            if (string.IsNullOrWhiteSpace(BatchDataInput)) return;
 
             IsBatchModeActive = true;
             IsCompareRightVisible = false;
@@ -544,11 +566,7 @@ namespace StudentReportGenerator.Services
 
         private async Task RunSideBySideComparisonAsync()
         {
-            if (string.IsNullOrWhiteSpace(CompareStudentName) || string.IsNullOrWhiteSpace(CompareNotes))
-            {
-                MessageBox.Show("Please ensure both comparison target input fields are fully completed before executing concurrent model analysis checks.", "Form Incomplete", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
+            if (string.IsNullOrWhiteSpace(CompareStudentName) || string.IsNullOrWhiteSpace(CompareNotes)) return;
 
             IsCompareRightVisible = true;
             GeneratedReportOutput = $"Querying provider 1 ({CompareProvider1})...\n";
@@ -667,7 +685,6 @@ namespace StudentReportGenerator.Services
                         if (parts.Length >= 2)
                         {
                             if (parts[0].ToLower().Contains("name") && parts[1].ToLower().Contains("note")) continue;
-                            // FIX: Replaced constant with literal 0 and 1
                             sb.AppendLine($"{parts[0]} | {parts[1]}");
                         }
                     }
@@ -694,7 +711,6 @@ namespace StudentReportGenerator.Services
                         var parts = parser.Split(line).Select(s => s.Trim('"', ' ')).ToArray();
                         if (parts.Length >= 1)
                         {
-                            // FIX: Replaced constant with literal 0 and 1
                             string sName = parts[0];
                             if (sName.ToLower().Contains("name")) continue;
                             string sClass = parts.Length >= 2 ? parts[1] : string.Empty;
@@ -713,62 +729,33 @@ namespace StudentReportGenerator.Services
             }
         }
 
-        private async Task PreviewToneAsync()
-        {
-            if (SelectedFramework == null) return;
-            StatusText = "Generating brief tone framework sample snippet...";
-
-            var request = new ReportRequest
-            {
-                StudentName = "Student Name",
-                Subject = "General Topic",
-                WordCount = 30,
-                RawNotes = "Student did a good job this term.",
-                SelectedFramework = SelectedFramework.Instruction + " IMPORTANT: Write exactly ONE sentence demonstrating this tone framework style signature.",
-                SchoolName = _currentSettings.SchoolName,
-                TeacherSignoff = _currentSettings.TeacherSignoff,
-                SelectedModel = SelectedModelTier
-            };
-
-            IAiService activeAiEngine;
-            string provider = SanitizeControlOutput(_currentSettings.AiProvider);
-            string key = provider.Contains("NVIDIA") ? _currentSettings.NvidiaApiKey :
-                         provider.Contains("OpenAI") ? _currentSettings.OpenAiApiKey :
-                         provider.Contains("Claude") ? _currentSettings.ClaudeApiKey : _currentSettings.GeminiApiKey;
-
-            if (provider.Contains("NVIDIA")) activeAiEngine = new NvidiaReportService(_sharedHttpClient, key);
-            else if (provider.Contains("OpenAI")) activeAiEngine = new OpenAiReportService(_sharedHttpClient, key);
-            else if (provider.Contains("Claude")) activeAiEngine = new ClaudeReportService(_sharedHttpClient, key);
-            else activeAiEngine = new GeminiReportService(_sharedHttpClient, key);
-
-            var resp = await activeAiEngine.GenerateReportAsync(request);
-            if (resp.IsSuccess)
-            {
-                MessageBox.Show($"Tone Preview Sample Alignment Verification:\n\n\"{resp.GeneratedReport}\"", "Template Framework Verified", MessageBoxButton.OK, MessageBoxImage.Information);
-                StatusText = "Tone framework metrics verified.";
-            }
-            else
-            {
-                StatusText = "Failed to pull alignment confirmation snippet.";
-            }
-        }
-
         private void SaveStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match == null) { _studentDatabase.Add(new StudentProfile { FullName = clean, ClassName = StudentClass, ParentEmail = ParentEmail, TargetGrade = TargetGrade, SupportNeeds = SupportNeeds }); } else { match.ClassName = StudentClass; match.ParentEmail = ParentEmail; match.TargetGrade = TargetGrade; match.SupportNeeds = SupportNeeds; } StudentDatabaseService.SaveStudents(_studentDatabase); RefreshCollections(); StatusText = "Profile card tracking synchronized."; }
         private void DeleteStudent() { string clean = SanitizeControlOutput(SelectedStudentName); var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match != null) { _studentDatabase.Remove(match); StudentDatabaseService.SaveStudents(_studentDatabase); StudentClass = ParentEmail = TargetGrade = SupportNeeds = string.Empty; SelectedStudentName = string.Empty; RefreshCollections(); StatusText = "Record dropped."; } }
         private void EnterApplication() { IsWelcomeOverlayVisible = false; }
         private void EditWelcomeProfile() { IsWelcomeBackVisible = false; IsProfileSetupVisible = true; }
         private void UploadLogo() { var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Images (*.png;*.jpg)|*.png;*.jpg" }; if (dialog.ShowDialog() == true) { _currentSettings.SchoolLogoPath = dialog.FileName; SecureSettingsService.SaveSettings(_currentSettings); ApplyBrandingConfiguration(); } }
-        private void CopyReportToClipboard() { if (!string.IsNullOrEmpty(GeneratedReportOutput)) Clipboard.SetText(GeneratedReportOutput); }
+        private void CopyReportToClipboard()
+        {
+            if (!string.IsNullOrEmpty(GeneratedReportOutput))
+            {
+                try
+                {
+                    Clipboard.SetText(GeneratedReportOutput);
+                    StatusText = "Report copied to clipboard successfully.";
+                }
+                catch
+                {
+                    StatusText = "Warning: Clipboard in use by another program. Please try again.";
+                }
+            }
+        }
         private void SaveAsWord() { if (string.IsNullOrEmpty(GeneratedReportOutput)) return; var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (dialog.ShowDialog() == true) WordExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
         private void SaveAsPdf() { if (string.IsNullOrEmpty(GeneratedReportOutput)) return; var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "PDF (*.pdf)|*.pdf" }; if (dialog.ShowDialog() == true) PdfExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
         private void ExportBatchWord() { if (SessionHistory.Count > 0) { var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (dialog.ShowDialog() == true) WordExportService.ExportBatch(dialog.FileName, SessionHistory.ToList()); } }
         private void FilterHistoryByStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; var history = HistoryDatabaseService.LoadHistory().Where(x => x.StudentName.Contains(clean, StringComparison.OrdinalIgnoreCase)).ToList(); SessionHistory = new ObservableCollection<SessionRecord>(history); }
         private void ClearHistoryFilter() { SessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>(); }
         private void SaveCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && !_currentSettings.CurriculumTopics.Contains(clean)) { _currentSettings.CurriculumTopics.Add(clean); SecureSettingsService.SaveSettings(_currentSettings); OnPropertyChanged(nameof(CurriculumTopics)); } }
-
-        // Resolves Bug #1: Restore curriculum topic deletion hooks successfully mapped
         private void DeleteCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && _currentSettings.CurriculumTopics.Contains(clean)) { _currentSettings.CurriculumTopics.Remove(clean); SecureSettingsService.SaveSettings(_currentSettings); OnPropertyChanged(nameof(CurriculumTopics)); } }
-
         private void AddCustomFrameworkTemplate() { if (!string.IsNullOrWhiteSpace(SettingsNewFrameworkName) && !string.IsNullOrWhiteSpace(SettingsNewFrameworkInstruction)) { _currentSettings.CustomFrameworks.Add(new ReportFramework { Name = SettingsNewFrameworkName, Instruction = SettingsNewFrameworkInstruction }); SecureSettingsService.SaveSettings(_currentSettings); OnPropertyChanged(nameof(CustomFrameworks)); SettingsNewFrameworkName = SettingsNewFrameworkInstruction = string.Empty; } }
         private void CopyHistoryPreviewToCompareBox() { IsCompareRightVisible = true; if (SelectedHistoryItem != null) CompareOutputRight = SelectedHistoryItem.GeneratedReport; }
 
@@ -835,7 +822,21 @@ namespace StudentReportGenerator.Services
         public ReportFramework? SelectedFramework { get => _selectedFramework; set => SetProperty(ref _selectedFramework, value); }
         public string SelectedCurriculumTopic { get => _selectedCurriculumTopic; set => SetProperty(ref _selectedCurriculumTopic, value); }
         public string CustomNotes { get => _customNotes; set => SetProperty(ref _customNotes, value); }
-        public string GeneratedReportOutput { get => _generatedReportOutput; set => SetProperty(ref _generatedReportOutput, value); }
+        public string GeneratedReportOutput
+        {
+            get => _generatedReportOutput;
+            set
+            {
+                if (SetProperty(ref _generatedReportOutput, value))
+                {
+                    // This manually notifies the Async command to re-check its status
+                    (EmailReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+
+                    // This tells the WPF UI to refresh the standard RelayCommands (Copy, Save, PDF)
+                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                }
+            }
+        }
         public bool IsTimekeepingPerfect { get => _isTimekeepingPerfect; set => SetProperty(ref _isTimekeepingPerfect, value); }
         public bool IsTimekeepingGood { get => _isTimekeepingGood; set => SetProperty(ref _isTimekeepingGood, value); }
         public bool IsTimekeepingPoor { get => _isTimekeepingPoor; set => SetProperty(ref _isTimekeepingPoor, value); }
@@ -853,6 +854,7 @@ namespace StudentReportGenerator.Services
         public string SettingsSchoolName { get => _settingsSchoolName; set => SetProperty(ref _settingsSchoolName, value); }
         public string SettingsTeacherName { get => _settingsTeacherName; set => SetProperty(ref _settingsTeacherName, value); }
         public string SettingsSmtpEmail { get => _settingsSmtpEmail; set => SetProperty(ref _settingsSmtpEmail, value); }
+
         public string SettingsSmtpPassword { get => ConvertToPlainString(_settingsSmtpSecurePassword); set { _settingsSmtpSecurePassword = ConvertToSecureString(value); OnPropertyChanged(); } }
         public string SettingsMasterPassword { get => _settingsMasterPassword; set => SetProperty(ref _settingsMasterPassword, value); }
         public string SettingsUnlockPassword { get => _settingsUnlockPassword; set => SetProperty(ref _settingsUnlockPassword, value); }
@@ -870,17 +872,7 @@ namespace StudentReportGenerator.Services
         public bool IsSettingsUnlocked { get => _isSettingsUnlocked; set => SetProperty(ref _isSettingsUnlocked, value); }
         public string StatusText { get => _statusText; set => SetProperty(ref _statusText, value); }
         public bool IsGenerating { get => _isGenerating; set { if (SetProperty(ref _isGenerating, value)) { (GenerateSingleCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (EmailReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (RunComparisonCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (PreviewToneCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
-        public bool IsBatchModeActive
-        {
-            get => _isBatchModeActive;
-            set
-            {
-                if (SetProperty(ref _isBatchModeActive, value))
-                {
-                    (GenerateBatchCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-                }
-            }
-        }
+        public bool IsBatchModeActive { get => _isBatchModeActive; set { if (SetProperty(ref _isBatchModeActive, value)) { (GenerateBatchCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
         public string HoursSavedDisplay { get => _hoursSavedDisplay; set => SetProperty(ref _hoursSavedDisplay, value); }
         public string TokensUsedDisplay { get => _tokensUsedDisplay; set => SetProperty(ref _tokensUsedDisplay, value); }
         public string NvidiaCountDisplay { get => _nvidiaCountDisplay; set => SetProperty(ref _nvidiaCountDisplay, value); }

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using StudentReportGenerator.Models;
 
@@ -8,17 +10,24 @@ namespace StudentReportGenerator.Services
 {
     public static class HistoryDatabaseService
     {
-        private static readonly string DbFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "report_history_db.json");
+        private static readonly string FilePath = "report_history_db.dat"; // Changed extension
+        private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("FacultyFlow_History_Secure_V1");
 
         public static ObservableCollection<SessionRecord> LoadHistory()
         {
-            if (!File.Exists(DbFilePath)) return new ObservableCollection<SessionRecord>();
+            if (File.Exists("report_history_db.json") && !File.Exists(FilePath))
+            {
+                MigratePlaintextDatabase();
+            }
+
+            if (!File.Exists(FilePath)) return new ObservableCollection<SessionRecord>();
 
             try
             {
-                string json = File.ReadAllText(DbFilePath);
-                var loadedList = JsonSerializer.Deserialize<ObservableCollection<SessionRecord>>(json);
-                return loadedList ?? new ObservableCollection<SessionRecord>();
+                byte[] encryptedBytes = File.ReadAllBytes(FilePath);
+                byte[] decryptedBytes = ProtectedData.Unprotect(encryptedBytes, Entropy, DataProtectionScope.CurrentUser);
+                string json = Encoding.UTF8.GetString(decryptedBytes);
+                return JsonSerializer.Deserialize<ObservableCollection<SessionRecord>>(json) ?? new ObservableCollection<SessionRecord>();
             }
             catch
             {
@@ -28,15 +37,22 @@ namespace StudentReportGenerator.Services
 
         public static void SaveHistory(ObservableCollection<SessionRecord> history)
         {
-            // We limit history to the last 200 reports to prevent the JSON file from becoming massive
-            var historyToSave = history;
-            if (history.Count > 200)
-            {
-                historyToSave = new ObservableCollection<SessionRecord>(history.Take(200));
-            }
+            string json = JsonSerializer.Serialize(history);
+            byte[] plainBytes = Encoding.UTF8.GetBytes(json);
+            byte[] encryptedBytes = ProtectedData.Protect(plainBytes, Entropy, DataProtectionScope.CurrentUser);
+            File.WriteAllBytes(FilePath, encryptedBytes);
+        }
 
-            string json = JsonSerializer.Serialize(historyToSave, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(DbFilePath, json);
+        private static void MigratePlaintextDatabase()
+        {
+            try
+            {
+                string oldJson = File.ReadAllText("report_history_db.json");
+                var oldData = JsonSerializer.Deserialize<ObservableCollection<SessionRecord>>(oldJson) ?? new ObservableCollection<SessionRecord>();
+                SaveHistory(oldData);
+                File.Delete("report_history_db.json"); // Destroy plaintext
+            }
+            catch { }
         }
     }
 }

@@ -7,6 +7,9 @@ using StudentReportGenerator.Services;
 
 namespace StudentReportGenerator
 {
+    /// <summary>
+    /// Interaction logic for MainWindow.xaml
+    /// </summary>
     public partial class MainWindow : Window
     {
         public MainWindow()
@@ -16,9 +19,12 @@ namespace StudentReportGenerator
             var vm = new MainViewModel();
             this.DataContext = vm;
 
-            // Wire up notification event trackers to sync unmanaged clearing functions safely
+            // Wire up a notification event tracker to sync unmanaged clearing functions safely
             vm.PropertyChanged += OnViewModelPropertyChanged;
         }
+
+        // ── PasswordBox code-behind bridge handlers ─────────────────────────────────
+        // Pushes the character layers directly into SecureStrings safely as typed.
 
         private void PbSmtpPassword_PasswordChanged(object sender, RoutedEventArgs e)
         {
@@ -46,6 +52,7 @@ namespace StudentReportGenerator
 
         private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
+            // Clear the unlock panel visual container input when verification succeeds or resets
             if (e.PropertyName == nameof(MainViewModel.SettingsUnlockPassword) &&
                 DataContext is MainViewModel vm &&
                 string.IsNullOrEmpty(vm.SettingsUnlockPassword) &&
@@ -54,6 +61,8 @@ namespace StudentReportGenerator
                 pbUnlockPassword.Clear();
             }
         }
+
+        // ── Theme Repainting Visual Matrix Canvas ───────────────────────────────────
 
         private void ApplyDarkMode(bool isDark)
         {

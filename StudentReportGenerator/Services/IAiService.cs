@@ -1,5 +1,6 @@
-﻿using System.Threading.Tasks;
-using StudentReportGenerator.Models;
+﻿using StudentReportGenerator.Models;
+using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace StudentReportGenerator.Services
 {
@@ -7,5 +8,6 @@ namespace StudentReportGenerator.Services
     public interface IAiService
     {
         Task<ReportResponse> GenerateReportAsync(ReportRequest request);
+       
     }
 }

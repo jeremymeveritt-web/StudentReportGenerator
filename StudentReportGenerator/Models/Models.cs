@@ -34,6 +34,7 @@ namespace StudentReportGenerator.Models
 
     public class SessionRecord
     {
+        public Guid Id { get; set; } = Guid.NewGuid();
         private string _generatedReport = string.Empty;
         public string StudentName { get; set; } = string.Empty;
 
