@@ -1,79 +1,52 @@
-﻿using System;
-using System.Net.Http;
+﻿using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
-    public class GeminiReportService : IAiService
+    public class GeminiReportService : BaseAiService
     {
-        private readonly HttpClient _httpClient;
-        private readonly string _apiKey;
+        public GeminiReportService(HttpClient httpClient, string apiKey) : base(httpClient, apiKey) { }
 
-        public GeminiReportService(HttpClient httpClient, string apiKey)
+        protected override HttpRequestMessage BuildRequest(ReportRequest request)
         {
-            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-            _apiKey = apiKey;
-        }
+            var prompt = PromptBuilderService.BuildSecurePrompt(request);
 
-        public async Task<ReportResponse> GenerateReportAsync(ReportRequest request)
-        {
-            try
+            // Gemini has a highly nested JSON requirement
+            var payload = new
             {
-                string activeModel = string.IsNullOrWhiteSpace(request.SelectedModel) ? "gemini-1.5-flash" : request.SelectedModel;
-                string endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{activeModel}:generateContent?key={_apiKey}";
-
-                string securePrompt = PromptBuilderService.BuildSecurePrompt(request);
-
-                var payload = new
+                contents = new[]
                 {
-                    contents = new[]
-                    {
-                        new { parts = new[] { new { text = securePrompt } } }
-                    }
-                };
-
-                string jsonPayload = JsonSerializer.Serialize(payload);
-                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-                var response = await _httpClient.PostAsync(endpoint, content);
-                string responseString = await response.Content.ReadAsStringAsync();
-
-                if (response.IsSuccessStatusCode)
+                    new { parts = new[] { new { text = prompt } } }
+                },
+                generationConfig = new
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(responseString))
-                    {
-                        var root = doc.RootElement;
-                        string generatedText = root.GetProperty("candidates")[0]
-                                                   .GetProperty("content")
-                                                   .GetProperty("parts")[0]
-                                                   .GetProperty("text").GetString();
-
-                        return new ReportResponse { IsSuccess = true, GeneratedReport = generatedText?.Trim() ?? string.Empty };
-                    }
+                    maxOutputTokens = 800,
+                    temperature = 0.7
                 }
+            };
 
-                return new ReportResponse { IsSuccess = false, ErrorMessage = $"Gemini Error: {response.StatusCode}" };
-            }
-            catch (Exception ex)
-            {
-                return new ReportResponse { IsSuccess = false, ErrorMessage = ex.Message };
-            }
+            // Gemini URL format requires the model name directly inside the URL path
+            var msg = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{request.SelectedModel}:generateContent");
+
+            // Gemini uses a custom Google header instead of standard Bearer auth
+            msg.Headers.Add("x-goog-api-key", _apiKey);
+            msg.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            return msg;
         }
 
-        private string BuildPrompt(ReportRequest request)
+        protected override string ParseResponse(string responseBody)
         {
-            return $"You are a school teacher writing an academic update report directly TO the parents of a student. " +
-                   $"CRITICAL PERSPECTIVE RULE: Do not address the student. Address the parents directly about their child using formal, professional, yet warm pronouns (e.g., 'Your child, {request.StudentName}, has shown...', '{request.StudentName} has worked hard...').\n\n" +
-                   $"Student Name: {request.StudentName}\n" +
-                   $"Subject: {request.Subject}\n" +
-                   $"Target Grade: {request.TargetGrade}\n" +
-                   $"Learning Support / SEN: {request.SupportNeeds}\n" +
-                   $"Tone Template: {request.SelectedFramework}\n" +
-                   $"Teacher Notes: {request.RawNotes}\n\n" +
-                   $"Write a ~{request.WordCount} word report update. Incorporate the target grade, accommodate mentioned support needs constructively, and sign off as '{request.TeacherSignoff}' from '{request.SchoolName}'.";
+            // Traverse Gemini's unique response tree: candidates[0].content.parts[0].text
+            using var doc = JsonDocument.Parse(responseBody);
+            return doc.RootElement
+                      .GetProperty("candidates")[0]
+                      .GetProperty("content")
+                      .GetProperty("parts")[0]
+                      .GetProperty("text")
+                      .GetString() ?? string.Empty;
         }
     }
 }
