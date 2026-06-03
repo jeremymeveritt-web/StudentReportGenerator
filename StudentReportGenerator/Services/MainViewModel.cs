@@ -11,30 +11,22 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
-    public class ComboBoxItemWrapper
-    {
-        public string Content { get; set; } = string.Empty;
-        public string Tag { get; set; } = string.Empty;
-        public override string ToString() => Content;
-    }
-
     public class MainViewModel : ViewModelBase
     {
         private static readonly HttpClient _sharedHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-        private CancellationTokenSource? _batchCancellationTokenSource;
-
-        // Core Backing State Properties
         private readonly AppStateService _appState;
+
+        // Expose the Settings ViewModel so the UI can bind to it!
+        public SettingsViewModel SettingsVM { get; }
+
+        private CancellationTokenSource? _batchCancellationTokenSource;
         private ObservableCollection<SessionRecord> _sessionHistory = new ObservableCollection<SessionRecord>();
         private List<StudentProfile> _studentDatabase = new List<StudentProfile>();
         private ObservableCollection<string> _studentNames = new ObservableCollection<string>();
-        private bool _isSettingsUnlocked = false;
         private string _statusText = "Ready.";
         private bool _isGenerating = false;
         private SessionRecord? _selectedHistoryItem;
@@ -59,7 +51,6 @@ namespace StudentReportGenerator.Services
         private bool _isContributionOccasional = false;
         private bool _isContributionRare = false;
         private bool _isContributionNever = false;
-        private bool _disableMasterPassword = false;
 
         // Batch Mode Form State
         private string _batchDataInput = string.Empty;
@@ -73,33 +64,11 @@ namespace StudentReportGenerator.Services
         private string _compareOutputRight = string.Empty;
         private bool _isCompareRightVisible = false;
 
-        // Settings Form fields
-        private string _settingsSchoolName = string.Empty;
-        private string _settingsTeacherName = string.Empty;
-        private string _settingsSmtpEmail = string.Empty;
-        private SecureString _settingsSmtpSecurePassword = new SecureString();
-        private string _settingsMasterPassword = string.Empty;
-        private string _settingsUnlockPassword = string.Empty;
-        private string _settingsNewFrameworkName = string.Empty;
-        private string _settingsNewFrameworkInstruction = string.Empty;
-        private string _dynamicApiKeyLabel = "NVIDIA Key:";
-        private SecureString _dynamicSecureApiKey = new SecureString();
-        private string _selectedModelTier = string.Empty;
-        private ObservableCollection<ComboBoxItemWrapper> _modelTierOptions = new ObservableCollection<ComboBoxItemWrapper>();
-
-        // Navigation state mapping
         private int _selectedNavigationIndex = 0;
-
-        // UI Visuals (Branding & Theme)
-        private Brush _navBarBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF392A4C"));
-        private string _mainAppTitle = "AI STUDENT REPORT GENERATOR";
-        private ImageSource? _schoolLogoImage;
-        private bool _isLogoVisible = false;
         private bool _isWelcomeOverlayVisible = true;
         private bool _isProfileSetupVisible = false;
         private bool _isWelcomeBackVisible = false;
 
-        // Dashboard/Metrics binding strings
         private string _hoursSavedDisplay = "0.0";
         private string _tokensUsedDisplay = "0";
         private string _nvidiaCountDisplay = "0";
@@ -111,11 +80,8 @@ namespace StudentReportGenerator.Services
         public ICommand GenerateSingleCommand { get; }
         public ICommand SaveStudentCommand { get; }
         public ICommand DeleteStudentCommand { get; }
-        public ICommand SaveProfileSettingsCommand { get; }
-        public ICommand UnlockSettingsCommand { get; }
         public ICommand EnterAppCommand { get; }
         public ICommand EditWelcomeProfileCommand { get; }
-        public ICommand UploadLogoCommand { get; }
         public ICommand CopyReportCommand { get; }
         public ICommand SaveWordCommand { get; }
         public ICommand SavePdfCommand { get; }
@@ -130,26 +96,26 @@ namespace StudentReportGenerator.Services
         public ICommand ShowAllHistoryCommand { get; }
         public ICommand SaveCurriculumCommand { get; }
         public ICommand DeleteCurriculumCommand { get; }
-        public ICommand AddFrameworkCommand { get; }
         public ICommand PreviewToneCommand { get; }
         public ICommand CompareHistoryCommand { get; }
-        public ICommand DeleteHistoryCommand { get; } // Feature Integration: Context Menu Right-Click Deletion Hook
+        public ICommand DeleteHistoryCommand { get; }
 
-        public MainViewModel(AppStateService appState)
+        public MainViewModel(AppStateService appState, SettingsViewModel settingsVM)
         {
             _appState = appState;
+            SettingsVM = settingsVM;
+
             GenerateSingleCommand = new AsyncRelayCommand(_ => GenerateSingleReportAsync(), _ => !IsGenerating);
             SaveStudentCommand = new RelayCommand(_ => SaveStudent());
             DeleteStudentCommand = new RelayCommand(_ => DeleteStudent());
-            SaveProfileSettingsCommand = new RelayCommand(_ => SaveProfileSettings());
-            UnlockSettingsCommand = new RelayCommand(_ => UnlockSettings());
             EnterAppCommand = new RelayCommand(_ => EnterApplication());
             EditWelcomeProfileCommand = new RelayCommand(_ => EditWelcomeProfile());
-            UploadLogoCommand = new RelayCommand(_ => UploadLogo());
             CopyReportCommand = new RelayCommand(_ => CopyReportToClipboard(), _ => !string.IsNullOrWhiteSpace(GeneratedReportOutput));
             SaveWordCommand = new RelayCommand(_ => SaveAsWord(), _ => !string.IsNullOrWhiteSpace(GeneratedReportOutput));
             SavePdfCommand = new RelayCommand(_ => SaveAsPdf(), _ => !string.IsNullOrWhiteSpace(GeneratedReportOutput));
+            ImportBatchCsvCommand = new RelayCommand(_ => ImportBatchCsv());
             EmailReportCommand = new AsyncRelayCommand(_ => EmailReportAsync(), _ => !IsGenerating && !string.IsNullOrWhiteSpace(GeneratedReportOutput));
+            GenerateBatchCommand = new AsyncRelayCommand(_ => GenerateBatchAsync(), _ => !_isBatchModeActive);
             CancelBatchCommand = new RelayCommand(_ => CancelBatchGeneration());
             ExportBatchWordCommand = new RelayCommand(_ => ExportBatchWord());
             RunComparisonCommand = new AsyncRelayCommand(_ => RunSideBySideComparisonAsync(), _ => !IsGenerating);
@@ -158,21 +124,17 @@ namespace StudentReportGenerator.Services
             ShowAllHistoryCommand = new RelayCommand(_ => ClearHistoryFilter());
             SaveCurriculumCommand = new RelayCommand(_ => SaveCurriculumTopic());
             DeleteCurriculumCommand = new RelayCommand(_ => DeleteCurriculumTopic());
-            AddFrameworkCommand = new RelayCommand(_ => AddCustomFrameworkTemplate());
+            PreviewToneCommand = new AsyncRelayCommand(_ => PreviewToneAsync(), _ => !IsGenerating);
             CompareHistoryCommand = new RelayCommand(_ => CopyHistoryPreviewToCompareBox());
-            DeleteHistoryCommand = new RelayCommand(DeleteHistoryRecord); 
+            DeleteHistoryCommand = new RelayCommand(DeleteHistoryRecord);
 
             _sessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>();
             _studentDatabase = StudentDatabaseService.LoadStudents() ?? new List<StudentProfile>();
 
-            InitializeSettings();
-        }
+            RefreshCollections();
+            UpdateDashboardMetricsDisplay();
 
-        #region Initialization Routines
-        private void InitializeSettings()
-        {
             IsWelcomeOverlayVisible = true;
-
             if (string.IsNullOrWhiteSpace(_appState.CurrentSettings.TeacherSignoff) || _appState.CurrentSettings.TeacherSignoff == "Mr. / Ms. Teacher")
             {
                 IsProfileSetupVisible = true;
@@ -183,78 +145,11 @@ namespace StudentReportGenerator.Services
                 IsProfileSetupVisible = false;
                 IsWelcomeBackVisible = true;
             }
-
-            // Feature Integration: Populates a rich out-of-the-box palette of 5 distinct default tone template profiles
-            if (_appState.CurrentSettings.CustomFrameworks == null || _appState.CurrentSettings.CustomFrameworks.Count < 4)
-            {
-                _appState.CurrentSettings.CustomFrameworks = new List<ReportFramework>
-                {
-                    new ReportFramework { Name = "Formal & Academic", Instruction = "Use highly formal, rigorous, and structural academic phrase structures." },
-                    new ReportFramework { Name = "Encouraging & Warm", Instruction = "Use a highly supportive, emotionally warm, and motivational tone framework." },
-                    new ReportFramework { Name = "Concise & Direct", Instruction = "Be extremely brief, factual, punchy, and structured straight to the point." },
-                    new ReportFramework { Name = "Developmental Focus", Instruction = "Highlight growth vectors, future target points, and constructive strategy tracks." },
-                    new ReportFramework { Name = "Creative & Enthusiastic", Instruction = "Incorporate highly energetic, collaborative, and lively structural descriptive tokens." }
-                };
-                SecureSettingsService.SaveSettings(_appState.CurrentSettings);
-            }
-
-            SettingsSchoolName = _appState.CurrentSettings.SchoolName;
-            SettingsTeacherName = _appState.CurrentSettings.TeacherSignoff;
-            SettingsSmtpEmail = _appState.CurrentSettings.SmtpEmail;
-            IsDarkMode = _appState.CurrentSettings.IsDarkMode;
-
-            _settingsSmtpSecurePassword = ConvertToSecureString(CryptoService.DecryptSecret(_appState.CurrentSettings.SmtpPassword));
-            _appState.CurrentSettings.SmtpPassword = string.Empty;
-
-            ApplyBrandingConfiguration();
-            EvaluateAiProviderOptions(_appState.CurrentSettings.AiProvider);
-            UpdateDashboardMetricsDisplay();
-            RefreshCollections();
         }
 
         private void RefreshCollections()
         {
             StudentNames = new ObservableCollection<string>(_studentDatabase.Select(x => x.FullName).ToList());
-        }
-
-        private void EvaluateAiProviderOptions(string provider)
-        {
-            string cleanProvider = SanitizeControlOutput(provider);
-            ModelTierOptions.Clear();
-            if (cleanProvider.Contains("NVIDIA"))
-            {
-                DynamicApiKeyLabel = "NVIDIA Key:";
-                _dynamicSecureApiKey = ConvertToSecureString(CryptoService.DecryptSecret(_appState.CurrentSettings.NvidiaApiKey));
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Llama 3.1 405B (Smarter)", Tag = "meta/llama-3.1-405b-instruct" });
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Llama 3.1 70B (Balanced)", Tag = "meta/llama-3.1-70b-instruct" });
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Nemotron 70B (NVIDIA)", Tag = "nvidia/nemotron-4-340b-instruct" });
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Mistral Large (Fast)", Tag = "mistralai/mistral-large-2-instruct" });
-                SelectedModelTier = _appState.CurrentSettings.NvidiaModelTier;
-            }
-            else if (cleanProvider.Contains("Gemini"))
-            {
-                DynamicApiKeyLabel = "Gemini Key:";
-                _dynamicSecureApiKey = ConvertToSecureString(CryptoService.DecryptSecret(_appState.CurrentSettings.GeminiApiKey));
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Gemini 2.5 Flash", Tag = "gemini-2.5-flash" });
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Gemini 2.5 Pro", Tag = "gemini-2.5-pro" });
-                SelectedModelTier = _appState.CurrentSettings.GeminiModelTier;
-            }
-            else if (cleanProvider.Contains("OpenAI"))
-            {
-                DynamicApiKeyLabel = "OpenAI Key:";
-                _dynamicSecureApiKey = ConvertToSecureString(CryptoService.DecryptSecret(_appState.CurrentSettings.OpenAiApiKey));
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "GPT-4o Mini", Tag = "gpt-4o-mini" });
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "GPT-4o", Tag = "gpt-4o" });
-                SelectedModelTier = _appState.CurrentSettings.OpenAiModelTier;
-            }
-            else if (cleanProvider.Contains("Claude"))
-            {
-                DynamicApiKeyLabel = "Claude Key:";
-                _dynamicSecureApiKey = ConvertToSecureString(CryptoService.DecryptSecret(_appState.CurrentSettings.ClaudeApiKey));
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Claude 3 Haiku", Tag = "claude-3-haiku-20240307" });
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Claude 3.5 Sonnet", Tag = "claude-3-5-sonnet-20240620" });
-                SelectedModelTier = _appState.CurrentSettings.ClaudeModelTier;
-            }
         }
 
         private void UpdateDashboardMetricsDisplay()
@@ -268,101 +163,23 @@ namespace StudentReportGenerator.Services
             ClaudeCountDisplay = _appState.CurrentSettings.ClaudeReportsCount.ToString("N0");
         }
 
-        private void ApplyBrandingConfiguration()
-        {
-            if (!string.IsNullOrWhiteSpace(_appState.CurrentSettings.ThemeColorHex))
-            {
-                try
-                {
-                    NavBarBackground = (SolidColorBrush)new BrushConverter().ConvertFrom(_appState.CurrentSettings.ThemeColorHex);
-                }
-                catch
-                {
-                    NavBarBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF392A4C"));
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(_appState.CurrentSettings.SchoolName) && _appState.CurrentSettings.SchoolName != "Enter School Name")
-            {
-                MainAppTitle = _appState.CurrentSettings.SchoolName.ToUpper() + " REPORT GENERATOR";
-            }
-
-            if (!string.IsNullOrWhiteSpace(_appState.CurrentSettings.SchoolLogoPath) && File.Exists(_appState.CurrentSettings.SchoolLogoPath))
-            {
-                try
-                {
-                    BitmapImage bitmap = new BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.UriSource = new Uri(_appState.CurrentSettings.SchoolLogoPath, UriKind.Absolute);
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.EndInit();
-                    SchoolLogoImage = bitmap;
-                    IsLogoVisible = true;
-                }
-                catch { IsLogoVisible = false; }
-            }
-            else
-            {
-                IsLogoVisible = false;
-            }
-        }
-
         private string SanitizeControlOutput(string source)
         {
             if (string.IsNullOrWhiteSpace(source)) return string.Empty;
             if (source.Contains("System.Windows.Controls.ComboBoxItem:"))
-            {
                 return source.Replace("System.Windows.Controls.ComboBoxItem:", "").Trim();
-            }
             return source.Trim();
         }
 
-        private SecureString ConvertToSecureString(string text)
-        {
-            var secure = new SecureString();
-            if (string.IsNullOrEmpty(text)) return secure;
-            foreach (char c in text) secure.AppendChar(c);
-            secure.MakeReadOnly();
-            return secure;
-        }
-
-        private string ConvertToPlainString(SecureString secure)
-        {
-            if (secure == null || secure.Length == 0) return string.Empty;
-            IntPtr pointer = System.Runtime.InteropServices.Marshal.SecureStringToBSTR(secure);
-            try
-            {
-                return System.Runtime.InteropServices.Marshal.PtrToStringBSTR(pointer);
-            }
-            finally
-            {
-                System.Runtime.InteropServices.Marshal.ZeroFreeBSTR(pointer);
-            }
-        }
-        #endregion
-
-        #region MVVM Logic Actions Implementation
         private async Task GenerateSingleReportAsync()
         {
             string cleanStudentName = SanitizeControlOutput(SelectedStudentName);
             string cleanTopic = SanitizeControlOutput(SelectedCurriculumTopic);
 
-            if (string.IsNullOrWhiteSpace(cleanStudentName))
-            {
-                StatusText = "Error: Please input or select a Student Name.";
-                MessageBox.Show("The student's name field cannot be empty.", "Missing Field", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+            if (string.IsNullOrWhiteSpace(cleanStudentName)) { MessageBox.Show("The student's name field cannot be empty.", "Missing Field", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            if (string.IsNullOrWhiteSpace(cleanTopic)) { MessageBox.Show("A curriculum topic must be designated to proceed.", "Missing Field", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
 
-            if (string.IsNullOrWhiteSpace(cleanTopic))
-            {
-                StatusText = "Error: Please input or select a Curriculum Topic.";
-                MessageBox.Show("A curriculum topic must be designated to proceed.", "Missing Field", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            string compiledNotes = $"Curriculum Topic Studied: {cleanTopic}\n\n";
-            compiledNotes += "Attendance & Timekeeping: ";
+            string compiledNotes = $"Curriculum Topic Studied: {cleanTopic}\n\nAttendance & Timekeeping: ";
             if (IsTimekeepingPerfect) compiledNotes += "100% attendance.\n";
             else if (IsTimekeepingGood) compiledNotes += "Good overall, but has occasional absences.\n";
             else if (IsTimekeepingPoor) compiledNotes += "Struggles with attendance; several unauthorised absences.\n";
@@ -373,44 +190,54 @@ namespace StudentReportGenerator.Services
             else if (IsContributionRare) compiledNotes += "Contributes rarely, but always with high quality responses.\n";
             else if (IsContributionNever) compiledNotes += "Never contributes in class.\n";
 
-            if (!string.IsNullOrWhiteSpace(CustomNotes))
-                compiledNotes += $"\nAdditional Teacher Notes: {CustomNotes}";
+            if (!string.IsNullOrWhiteSpace(CustomNotes)) compiledNotes += $"\nAdditional Teacher Notes: {CustomNotes}";
 
             IsCompareRightVisible = false;
             StatusText = "Generating report...";
-
             await ProcessSingleReportExecutionAsync(cleanStudentName, compiledNotes, _appState.CurrentSettings.AiProvider, report => GeneratedReportOutput = report);
         }
 
         private async Task<bool> ProcessSingleReportExecutionAsync(string name, string notes, string provider, Action<string> onCompleteOutput)
         {
             IsGenerating = true;
-            string activeKey = ConvertToPlainString(_dynamicSecureApiKey);
-            string activeModel = SanitizeControlOutput(SelectedModelTier);
             string cleanProvider = SanitizeControlOutput(provider);
+            string activeKey = string.Empty;
+            string activeModel = string.Empty;
             IAiService activeAiEngine;
 
-            if (cleanProvider.Contains("NVIDIA")) { activeAiEngine = new NvidiaReportService(_sharedHttpClient, activeKey); }
-            else if (cleanProvider.Contains("OpenAI")) { activeAiEngine = new OpenAiReportService(_sharedHttpClient, activeKey); }
-            else if (cleanProvider.Contains("Claude")) { activeAiEngine = new ClaudeReportService(_sharedHttpClient, activeKey); }
-            else { activeAiEngine = new GeminiReportService(_sharedHttpClient, activeKey); }
+            if (cleanProvider.Contains("NVIDIA"))
+            {
+                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.NvidiaApiKey);
+                activeModel = _appState.CurrentSettings.NvidiaModelTier;
+                activeAiEngine = new NvidiaReportService(_sharedHttpClient, activeKey);
+            }
+            else if (cleanProvider.Contains("OpenAI"))
+            {
+                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.OpenAiApiKey);
+                activeModel = _appState.CurrentSettings.OpenAiModelTier;
+                activeAiEngine = new OpenAiReportService(_sharedHttpClient, activeKey);
+            }
+            else if (cleanProvider.Contains("Claude"))
+            {
+                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.ClaudeApiKey);
+                activeModel = _appState.CurrentSettings.ClaudeModelTier;
+                activeAiEngine = new ClaudeReportService(_sharedHttpClient, activeKey);
+            }
+            else
+            {
+                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.GeminiApiKey);
+                activeModel = _appState.CurrentSettings.GeminiModelTier;
+                activeAiEngine = new GeminiReportService(_sharedHttpClient, activeKey);
+            }
 
             if (string.IsNullOrWhiteSpace(activeKey))
             {
-                onCompleteOutput("ERROR: Missing API Key inside configuration profiles.");
+                onCompleteOutput("ERROR: Missing API Key inside configuration profiles. Please check Settings.");
                 IsGenerating = false;
                 return false;
             }
 
-            string dbTargetGrade = string.Empty;
-            string dbSupportNeeds = string.Empty;
             var match = _studentDatabase.FirstOrDefault(s => s.FullName.Equals(name, StringComparison.OrdinalIgnoreCase));
-            if (match != null)
-            {
-                dbTargetGrade = match.TargetGrade;
-                dbSupportNeeds = match.SupportNeeds;
-            }
-
             var request = new ReportRequest
             {
                 StudentName = name,
@@ -421,96 +248,66 @@ namespace StudentReportGenerator.Services
                 SchoolName = _appState.CurrentSettings.SchoolName,
                 TeacherSignoff = _appState.CurrentSettings.TeacherSignoff,
                 SelectedModel = activeModel,
-                TargetGrade = dbTargetGrade,
-                SupportNeeds = dbSupportNeeds
+                TargetGrade = match?.TargetGrade ?? string.Empty,
+                SupportNeeds = match?.SupportNeeds ?? string.Empty
             };
 
-            try
+            var response = await activeAiEngine.GenerateReportAsync(request);
+            IsGenerating = false;
+
+            if (response.IsSuccess)
             {
-                var response = await activeAiEngine.GenerateReportAsync(request);
-                IsGenerating = false;
+                onCompleteOutput(response.GeneratedReport);
+                SessionHistory.Insert(0, new SessionRecord { StudentName = request.StudentName, GeneratedReport = response.GeneratedReport, Timestamp = DateTime.Now });
+                HistoryDatabaseService.SaveHistory(SessionHistory);
 
-                if (response.IsSuccess)
-                {
-                    onCompleteOutput(response.GeneratedReport);
+                int words = response.GeneratedReport.Split(' ').Length;
+                _appState.CurrentSettings.TotalTokensEstimated += (long)(words * 1.3);
+                _appState.CurrentSettings.TotalReportsGenerated++;
 
-                    SessionHistory.Insert(0, new SessionRecord
-                    {
-                        StudentName = request.StudentName,
-                        GeneratedReport = response.GeneratedReport,
-                        Timestamp = DateTime.Now
-                    });
+                if (cleanProvider.Contains("NVIDIA")) _appState.CurrentSettings.NvidiaReportsCount++;
+                else if (cleanProvider.Contains("OpenAI")) _appState.CurrentSettings.OpenAiReportsCount++;
+                else if (cleanProvider.Contains("Claude")) _appState.CurrentSettings.ClaudeReportsCount++;
+                else _appState.CurrentSettings.GeminiReportsCount++;
 
-                    HistoryDatabaseService.SaveHistory(SessionHistory);
-
-                    int words = response.GeneratedReport.Split(' ').Length;
-                    _appState.CurrentSettings.TotalTokensEstimated += (long)(words * 1.3);
-                    _appState.CurrentSettings.TotalReportsGenerated++;
-
-                    if (cleanProvider.Contains("NVIDIA")) _appState.CurrentSettings.NvidiaReportsCount++;
-                    else if (cleanProvider.Contains("OpenAI")) _appState.CurrentSettings.OpenAiReportsCount++;
-                    else if (cleanProvider.Contains("Claude")) _appState.CurrentSettings.ClaudeReportsCount++;
-                    else _appState.CurrentSettings.GeminiReportsCount++;
-
-                    _appState.CurrentSettings.SmtpPassword = CryptoService.EncryptSecret(ConvertToPlainString(_settingsSmtpSecurePassword));
-
-                    if (cleanProvider.Contains("NVIDIA")) _appState.CurrentSettings.NvidiaApiKey = CryptoService.EncryptSecret(activeKey);
-                    if (cleanProvider.Contains("Gemini")) _appState.CurrentSettings.GeminiApiKey = CryptoService.EncryptSecret(activeKey);
-                    if (cleanProvider.Contains("OpenAI")) _appState.CurrentSettings.OpenAiApiKey = CryptoService.EncryptSecret(activeKey);
-                    if (cleanProvider.Contains("Claude")) _appState.CurrentSettings.ClaudeApiKey = CryptoService.EncryptSecret(activeKey);
-
-                    SecureSettingsService.SaveSettings(_appState.CurrentSettings);
-
-                    
-                    UpdateDashboardMetricsDisplay();
-                    StatusText = "Ready.";
-                    return true;
-                }
-
-                onCompleteOutput($"API Error: {response.ErrorMessage}");
-                StatusText = "Generation failed.";
-                return false;
+                _appState.SaveSettings();
+                UpdateDashboardMetricsDisplay();
+                StatusText = "Ready.";
+                return true;
             }
-            catch (TaskCanceledException)
-            {
-                IsGenerating = false;
-                onCompleteOutput("CONNECTION TIMEOUT: The downstream system connection window expired.");
-                StatusText = "Connection timed out.";
-                return false;
-            }
-            catch (Exception ex)
-            {
-                IsGenerating = false;
-                onCompleteOutput($"SYSTEM EXCEPTION: {ex.Message}");
-                StatusText = "Error encountered.";
-                return false;
-            }
+
+            onCompleteOutput(response.ErrorMessage);
+            StatusText = "Error encountered.";
+            return false;
+        }
+
+        private async Task PreviewToneAsync()
+        {
+            if (SelectedFramework == null) { MessageBox.Show("Please select a tone framework first."); return; }
+            string notes = $"Generate a 2-sentence preview showing this tone. Subject: {SanitizeControlOutput(SelectedCurriculumTopic)}";
+            IsCompareRightVisible = true;
+            StatusText = "Previewing Tone...";
+            await ProcessSingleReportExecutionAsync("Student Preview", notes, _appState.CurrentSettings.AiProvider, report => CompareOutputRight = report);
         }
 
         private void DeleteHistoryRecord(object? parameter)
         {
-            if (parameter is SessionRecord record)
+            if (parameter is SessionRecord record && SessionHistory.Contains(record))
             {
-                if (SessionHistory.Contains(record))
-                {
-                    SessionHistory.Remove(record);
-                    HistoryDatabaseService.SaveHistory(SessionHistory);
-                    StatusText = "History record deleted successfully.";
-                }
+                SessionHistory.Remove(record);
+                HistoryDatabaseService.SaveHistory(SessionHistory);
+                StatusText = "History record deleted successfully.";
             }
         }
 
         private async Task GenerateBatchAsync()
         {
             if (string.IsNullOrWhiteSpace(BatchDataInput)) return;
-
             IsBatchModeActive = true;
             IsCompareRightVisible = false;
             GeneratedReportOutput = "Starting batch processing...\n";
 
             var lines = BatchDataInput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            int successCount = 0;
-
             _batchCancellationTokenSource = new CancellationTokenSource();
             var token = _batchCancellationTokenSource.Token;
 
@@ -519,7 +316,6 @@ namespace StudentReportGenerator.Services
                 for (int i = 0; i < lines.Length; i++)
                 {
                     if (token.IsCancellationRequested) break;
-
                     if (!lines[i].Contains("|")) continue;
 
                     var parts = lines[i].Split('|');
@@ -529,27 +325,14 @@ namespace StudentReportGenerator.Services
                     if (string.IsNullOrWhiteSpace(studentNameClean)) continue;
 
                     StatusText = $"Generating batch card {i + 1} of {lines.Length}...";
+                    await ProcessSingleReportExecutionAsync(studentNameClean, studentNotesClean, _appState.CurrentSettings.AiProvider, report => GeneratedReportOutput = report);
 
-                    bool success = await ProcessSingleReportExecutionAsync(studentNameClean, studentNotesClean, _appState.CurrentSettings.AiProvider, report => GeneratedReportOutput = report);
-                    if (success) successCount++;
-
-                    if (i < lines.Length - 1 && !token.IsCancellationRequested)
-                    {
-                        await Task.Delay(1500, token);
-                    }
+                    if (i < lines.Length - 1 && !token.IsCancellationRequested) await Task.Delay(1500, token);
                 }
                 StatusText = "Batch update completed.";
             }
-            catch (TaskCanceledException)
-            {
-                StatusText = "Batch Stopped.";
-            }
-            finally
-            {
-                IsBatchModeActive = false;
-                _batchCancellationTokenSource?.Dispose();
-                _batchCancellationTokenSource = null;
-            }
+            catch (TaskCanceledException) { StatusText = "Batch Stopped."; }
+            finally { IsBatchModeActive = false; _batchCancellationTokenSource?.Dispose(); _batchCancellationTokenSource = null; }
         }
 
         private void CancelBatchGeneration()
@@ -557,18 +340,17 @@ namespace StudentReportGenerator.Services
             if (_batchCancellationTokenSource != null && !_batchCancellationTokenSource.IsCancellationRequested)
             {
                 _batchCancellationTokenSource.Cancel();
-                StatusText = "Stopping active background queue arrays runs...";
+                StatusText = "Stopping active runs...";
             }
         }
 
         private async Task RunSideBySideComparisonAsync()
         {
             if (string.IsNullOrWhiteSpace(CompareStudentName) || string.IsNullOrWhiteSpace(CompareNotes)) return;
-
             IsCompareRightVisible = true;
-            GeneratedReportOutput = $"Querying provider 1 ({CompareProvider1})...\n";
-            CompareOutputRight = $"Querying provider 2 ({CompareProvider2})...\n";
-            StatusText = "Running simultaneous multiple analysis...";
+            GeneratedReportOutput = $"Querying {CompareProvider1}...\n";
+            CompareOutputRight = $"Querying {CompareProvider2}...\n";
+            StatusText = "Running simultaneous analysis...";
 
             var task1 = ProcessSingleReportExecutionAsync(CompareStudentName, CompareNotes, CompareProvider1, out1 => GeneratedReportOutput = out1);
             var task2 = ProcessSingleReportExecutionAsync(CompareStudentName, CompareNotes, CompareProvider2, out2 => CompareOutputRight = out2);
@@ -579,77 +361,30 @@ namespace StudentReportGenerator.Services
 
         private async Task EmailReportAsync()
         {
-            string plainSmtpPassword = ConvertToPlainString(_settingsSmtpSecurePassword);
+            string plainSmtpPassword = CryptoService.DecryptSecret(_appState.CurrentSettings.SmtpPassword);
             if (string.IsNullOrWhiteSpace(_appState.CurrentSettings.SmtpEmail) || string.IsNullOrWhiteSpace(plainSmtpPassword))
             {
-                StatusText = "Email failed: SMTP outbox credentials unconfigured.";
-                MessageBox.Show("Please configure your school email credentials in Profile Settings before attempting parent updates.", "Configuration Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Please configure your SMTP credentials in Profile Settings.", "Missing Credentials", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             try { _ = new System.Net.Mail.MailAddress(ParentEmail); }
-            catch
-            {
-                MessageBox.Show($"The email address \"{ParentEmail}\" is not valid.\nPlease enter a correctly formatted address.", "Invalid Email Address", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(GeneratedReportOutput))
-            {
-                StatusText = "Email failed: Missing text.";
-                return;
-            }
+            catch { MessageBox.Show("Invalid parent email address.", "Error", MessageBoxButton.OK, MessageBoxImage.Error); return; }
 
             string studentName = SanitizeControlOutput(SelectedStudentName);
-            string subjectLine = string.IsNullOrWhiteSpace(studentName) ? "Student Update Summary Report" : $"Performance Summary Update Card — {studentName}";
+            string subjectLine = string.IsNullOrWhiteSpace(studentName) ? "Student Update Report" : $"Performance Update — {studentName}";
 
-            StatusText = "Sending update email to parent...";
+            StatusText = "Sending email...";
             try
             {
-                await EmailService.SendEmailAsync(ParentEmail, subjectLine, GeneratedReportOutput,
-                                                  _appState.CurrentSettings.SmtpServer, _appState.CurrentSettings.SmtpPort,
-                                                  _appState.CurrentSettings.SmtpEmail, _settingsSmtpSecurePassword);
+                var securePwd = new SecureString();
+                foreach (char c in plainSmtpPassword) securePwd.AppendChar(c);
+                securePwd.MakeReadOnly();
+
+                await EmailService.SendEmailAsync(ParentEmail, subjectLine, GeneratedReportOutput, _appState.CurrentSettings.SmtpServer, _appState.CurrentSettings.SmtpPort, _appState.CurrentSettings.SmtpEmail, securePwd);
                 StatusText = "Email sent successfully.";
             }
-            catch (Exception ex)
-            {
-                StatusText = $"Email failed: {ex.Message}";
-            }
-        }
-
-        private void SaveProfileSettings()
-        {
-            _appState.CurrentSettings.SchoolName = SettingsSchoolName;
-            _appState.CurrentSettings.TeacherSignoff = SettingsTeacherName;
-            _appState.CurrentSettings.SmtpEmail = SettingsSmtpEmail;
-
-            _appState.CurrentSettings.SmtpPassword = ConvertToPlainString(_settingsSmtpSecurePassword);
-            // Inside SaveProfileSettings(), replace the master password IF block with this:
-            if (DisableMasterPassword)
-            {
-                _appState.CurrentSettings.MasterPassword = string.Empty;
-                SettingsMasterPassword = string.Empty;
-            }
-            else if (!string.IsNullOrEmpty(SettingsMasterPassword))
-            {
-                
-                _appState.CurrentSettings.SmtpPassword = CryptoService.EncryptSecret(ConvertToPlainString(_settingsSmtpSecurePassword)); ;
-            }
-        }
-
-        private void UnlockSettings()
-        {
-            if (string.IsNullOrEmpty(_appState.CurrentSettings.MasterPassword))
-            {
-                IsSettingsUnlocked = true;
-                return;
-            }
-            if (CryptoService.VerifyPassword(SettingsUnlockPassword, _appState.CurrentSettings.MasterPassword))
-            {
-                IsSettingsUnlocked = true;
-                SettingsUnlockPassword = string.Empty;
-                StatusText = "Configurations portal open.";
-            }
+            catch (Exception ex) { StatusText = $"Email failed: {ex.Message}"; }
         }
 
         private void ImportBatchCsv()
@@ -662,7 +397,6 @@ namespace StudentReportGenerator.Services
                     var lines = File.ReadAllLines(dialog.FileName);
                     var sb = new StringBuilder();
                     var parser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
-
                     foreach (var line in lines)
                     {
                         if (string.IsNullOrWhiteSpace(line)) continue;
@@ -674,7 +408,6 @@ namespace StudentReportGenerator.Services
                         }
                     }
                     BatchDataInput = sb.ToString();
-                    StatusText = "Roster lines aggregated cleanly.";
                 }
                 catch (Exception ex) { MessageBox.Show($"File error: {ex.Message}"); }
             }
@@ -689,7 +422,6 @@ namespace StudentReportGenerator.Services
                 {
                     var lines = File.ReadAllLines(dialog.FileName);
                     var parser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
-                    int addedCount = 0;
                     foreach (var line in lines)
                     {
                         if (string.IsNullOrWhiteSpace(line)) continue;
@@ -698,50 +430,29 @@ namespace StudentReportGenerator.Services
                         {
                             string sName = parts[0];
                             if (sName.ToLower().Contains("name")) continue;
-                            string sClass = parts.Length >= 2 ? parts[1] : string.Empty;
                             if (!_studentDatabase.Any(s => s.FullName.Equals(sName, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                _studentDatabase.Add(new StudentProfile { FullName = sName, ClassName = sClass });
-                                addedCount++;
-                            }
+                                _studentDatabase.Add(new StudentProfile { FullName = sName, ClassName = parts.Length >= 2 ? parts[1] : string.Empty });
                         }
                     }
                     StudentDatabaseService.SaveStudents(_studentDatabase);
                     RefreshCollections();
-                    StatusText = $"Ingested {addedCount} records to student cache roster.";
                 }
                 catch (Exception ex) { MessageBox.Show($"Roster error: {ex.Message}"); }
             }
         }
 
-        private void SaveStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match == null) { _studentDatabase.Add(new StudentProfile { FullName = clean, ClassName = StudentClass, ParentEmail = ParentEmail, TargetGrade = TargetGrade, SupportNeeds = SupportNeeds }); } else { match.ClassName = StudentClass; match.ParentEmail = ParentEmail; match.TargetGrade = TargetGrade; match.SupportNeeds = SupportNeeds; } StudentDatabaseService.SaveStudents(_studentDatabase); RefreshCollections(); StatusText = "Profile card tracking synchronized."; }
+        private void SaveStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match == null) { _studentDatabase.Add(new StudentProfile { FullName = clean, ClassName = StudentClass, ParentEmail = ParentEmail, TargetGrade = TargetGrade, SupportNeeds = SupportNeeds }); } else { match.ClassName = StudentClass; match.ParentEmail = ParentEmail; match.TargetGrade = TargetGrade; match.SupportNeeds = SupportNeeds; } StudentDatabaseService.SaveStudents(_studentDatabase); RefreshCollections(); StatusText = "Profile saved."; }
         private void DeleteStudent() { string clean = SanitizeControlOutput(SelectedStudentName); var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match != null) { _studentDatabase.Remove(match); StudentDatabaseService.SaveStudents(_studentDatabase); StudentClass = ParentEmail = TargetGrade = SupportNeeds = string.Empty; SelectedStudentName = string.Empty; RefreshCollections(); StatusText = "Record dropped."; } }
         private void EnterApplication() { IsWelcomeOverlayVisible = false; }
-        private void EditWelcomeProfile() { IsWelcomeBackVisible = false; IsProfileSetupVisible = true; }
-        private void UploadLogo() { var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Images (*.png;*.jpg)|*.png;*.jpg" }; if (dialog.ShowDialog() == true) { _appState.CurrentSettings.SchoolLogoPath = dialog.FileName; SecureSettingsService.SaveSettings(_appState.CurrentSettings); ApplyBrandingConfiguration(); } }
-        private void CopyReportToClipboard()
-        {
-            if (!string.IsNullOrEmpty(GeneratedReportOutput))
-            {
-                try
-                {
-                    Clipboard.SetText(GeneratedReportOutput);
-                    StatusText = "Report copied to clipboard successfully.";
-                }
-                catch
-                {
-                    StatusText = "Warning: Clipboard in use by another program. Please try again.";
-                }
-            }
-        }
-        private void SaveAsWord() { if (string.IsNullOrEmpty(GeneratedReportOutput)) return; var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (dialog.ShowDialog() == true) WordExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
-        private void SaveAsPdf() { if (string.IsNullOrEmpty(GeneratedReportOutput)) return; var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "PDF (*.pdf)|*.pdf" }; if (dialog.ShowDialog() == true) PdfExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
-        private void ExportBatchWord() { if (SessionHistory.Count > 0) { var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (dialog.ShowDialog() == true) WordExportService.ExportBatch(dialog.FileName, SessionHistory.ToList()); } }
-        private void FilterHistoryByStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; var history = HistoryDatabaseService.LoadHistory().Where(x => x.StudentName.Contains(clean, StringComparison.OrdinalIgnoreCase)).ToList(); SessionHistory = new ObservableCollection<SessionRecord>(history); }
+        private void EditWelcomeProfile() { IsWelcomeBackVisible = false; IsProfileSetupVisible = true; SelectedNavigationIndex = 3; }
+        private void CopyReportToClipboard() { if (!string.IsNullOrEmpty(GeneratedReportOutput)) { try { Clipboard.SetText(GeneratedReportOutput); StatusText = "Copied."; } catch { StatusText = "Clipboard blocked."; } } }
+        private void SaveAsWord() { var d = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (d.ShowDialog() == true) WordExportService.ExportSingle(d.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
+        private void SaveAsPdf() { var d = new Microsoft.Win32.SaveFileDialog { Filter = "PDF (*.pdf)|*.pdf" }; if (d.ShowDialog() == true) PdfExportService.ExportSingle(d.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
+        private void ExportBatchWord() { if (SessionHistory.Count > 0) { var d = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (d.ShowDialog() == true) WordExportService.ExportBatch(d.FileName, SessionHistory.ToList()); } }
+        private void FilterHistoryByStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; SessionHistory = new ObservableCollection<SessionRecord>(HistoryDatabaseService.LoadHistory().Where(x => x.StudentName.Contains(clean, StringComparison.OrdinalIgnoreCase)).ToList()); }
         private void ClearHistoryFilter() { SessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>(); }
-        private void SaveCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && !_appState.CurrentSettings.CurriculumTopics.Contains(clean)) { _appState.CurrentSettings.CurriculumTopics.Add(clean); SecureSettingsService.SaveSettings(_appState.CurrentSettings); OnPropertyChanged(nameof(CurriculumTopics)); } }
-        private void DeleteCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && _appState.CurrentSettings.CurriculumTopics.Contains(clean)) { _appState.CurrentSettings.CurriculumTopics.Remove(clean); SecureSettingsService.SaveSettings(_appState.CurrentSettings); OnPropertyChanged(nameof(CurriculumTopics)); } }
-        private void AddCustomFrameworkTemplate() { if (!string.IsNullOrWhiteSpace(SettingsNewFrameworkName) && !string.IsNullOrWhiteSpace(SettingsNewFrameworkInstruction)) { _appState.CurrentSettings.CustomFrameworks.Add(new ReportFramework { Name = SettingsNewFrameworkName, Instruction = SettingsNewFrameworkInstruction }); SecureSettingsService.SaveSettings(_appState.CurrentSettings); OnPropertyChanged(nameof(CustomFrameworks)); SettingsNewFrameworkName = SettingsNewFrameworkInstruction = string.Empty; } }
+        private void SaveCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && !_appState.CurrentSettings.CurriculumTopics.Contains(clean)) { _appState.CurrentSettings.CurriculumTopics.Add(clean); _appState.SaveSettings(); OnPropertyChanged(nameof(CurriculumTopics)); } }
+        private void DeleteCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && _appState.CurrentSettings.CurriculumTopics.Contains(clean)) { _appState.CurrentSettings.CurriculumTopics.Remove(clean); _appState.SaveSettings(); OnPropertyChanged(nameof(CurriculumTopics)); } }
         private void CopyHistoryPreviewToCompareBox() { IsCompareRightVisible = true; if (SelectedHistoryItem != null) CompareOutputRight = SelectedHistoryItem.GeneratedReport; }
 
         public ObservableCollection<SessionRecord> SessionHistory { get => _sessionHistory; set => SetProperty(ref _sessionHistory, value); }
@@ -749,55 +460,8 @@ namespace StudentReportGenerator.Services
         public List<ReportFramework> CustomFrameworks => _appState.CurrentSettings.CustomFrameworks;
         public List<string> CurriculumTopics => _appState.CurrentSettings.CurriculumTopics;
 
-        public SessionRecord? SelectedHistoryItem
-        {
-            get => _selectedHistoryItem;
-            set => SetProperty(ref _selectedHistoryItem, value);
-        }
-
-        public string SelectedThemeColorHex
-        {
-            get => _appState.CurrentSettings.ThemeColorHex;
-            set
-            {
-                string cleanHex = SanitizeControlOutput(value);
-                if (!string.IsNullOrWhiteSpace(cleanHex) && _appState.CurrentSettings.ThemeColorHex != cleanHex)
-                {
-                    _appState.CurrentSettings.ThemeColorHex = cleanHex;
-                    OnPropertyChanged();
-                    try
-                    {
-                        NavBarBackground = (SolidColorBrush)new BrushConverter().ConvertFrom(cleanHex);
-                    }
-                    catch
-                    {
-                        NavBarBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF392A4C"));
-                    }
-                    SecureSettingsService.SaveSettings(_appState.CurrentSettings);
-                }
-            }
-        }
-
-        public int SelectedNavigationIndex
-        {
-            get => _selectedNavigationIndex;
-            set
-            {
-                if (SetProperty(ref _selectedNavigationIndex, value))
-                {
-                    if (_selectedNavigationIndex < 3 && !string.IsNullOrEmpty(_appState.CurrentSettings.MasterPassword))
-                    {
-                        IsSettingsUnlocked = false;
-                    }
-                }
-            }
-        }
-
-        public string SelectedAiProvider { get => _appState.CurrentSettings.AiProvider; set { string clean = SanitizeControlOutput(value); if (_appState.CurrentSettings.AiProvider != clean) { _appState.CurrentSettings.AiProvider = clean; OnPropertyChanged(); EvaluateAiProviderOptions(clean); } } }
-        public string SelectedModelTier { get => _selectedModelTier; set { string clean = SanitizeControlOutput(value); if (SetProperty(ref _selectedModelTier, clean)) { string p = SanitizeControlOutput(_appState.CurrentSettings.AiProvider); if (p.Contains("NVIDIA")) _appState.CurrentSettings.NvidiaModelTier = clean; else if (p.Contains("Gemini")) _appState.CurrentSettings.GeminiModelTier = clean; else if (p.Contains("OpenAI")) _appState.CurrentSettings.OpenAiModelTier = clean; else if (p.Contains("Claude")) _appState.CurrentSettings.ClaudeModelTier = clean; SecureSettingsService.SaveSettings(_appState.CurrentSettings); } } }
-        public string DynamicApiKeyPassword { get => ConvertToPlainString(_dynamicSecureApiKey); set { _dynamicSecureApiKey = ConvertToSecureString(value); OnPropertyChanged(); } }
-        public bool IsDarkMode { get => _appState.CurrentSettings.IsDarkMode; set { if (_appState.CurrentSettings.IsDarkMode != value) { _appState.CurrentSettings.IsDarkMode = value; OnPropertyChanged(); var win = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault(); if (win != null) { var method = win.GetType().GetMethod("ApplyDarkMode", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic); method?.Invoke(win, new object[] { value }); } } } }
-
+        public SessionRecord? SelectedHistoryItem { get => _selectedHistoryItem; set => SetProperty(ref _selectedHistoryItem, value); }
+        public int SelectedNavigationIndex { get => _selectedNavigationIndex; set { if (SetProperty(ref _selectedNavigationIndex, value)) { if (_selectedNavigationIndex < 3 && !string.IsNullOrEmpty(_appState.CurrentSettings.MasterPassword)) { SettingsVM.IsSettingsUnlocked = false; } } } }
         public string SelectedStudentName { get => _selectedStudentName; set { string clean = SanitizeControlOutput(value); if (SetProperty(ref _selectedStudentName, clean)) { var m = _studentDatabase.FirstOrDefault(x => x.FullName == clean); if (m != null) { StudentClass = m.ClassName; ParentEmail = m.ParentEmail; TargetGrade = m.TargetGrade; SupportNeeds = m.SupportNeeds; } } } }
         public string StudentClass { get => _studentClass; set => SetProperty(ref _studentClass, value); }
         public string TargetGrade { get => _targetGrade; set => SetProperty(ref _targetGrade, value); }
@@ -807,21 +471,7 @@ namespace StudentReportGenerator.Services
         public ReportFramework? SelectedFramework { get => _selectedFramework; set => SetProperty(ref _selectedFramework, value); }
         public string SelectedCurriculumTopic { get => _selectedCurriculumTopic; set => SetProperty(ref _selectedCurriculumTopic, value); }
         public string CustomNotes { get => _customNotes; set => SetProperty(ref _customNotes, value); }
-        public string GeneratedReportOutput
-        {
-            get => _generatedReportOutput;
-            set
-            {
-                if (SetProperty(ref _generatedReportOutput, value))
-                {
-                    // This manually notifies the Async command to re-check its status
-                    (EmailReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-
-                    // This tells the WPF UI to refresh the standard RelayCommands (Copy, Save, PDF)
-                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
-                }
-            }
-        }
+        public string GeneratedReportOutput { get => _generatedReportOutput; set { if (SetProperty(ref _generatedReportOutput, value)) { (EmailReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); System.Windows.Input.CommandManager.InvalidateRequerySuggested(); } } }
         public bool IsTimekeepingPerfect { get => _isTimekeepingPerfect; set => SetProperty(ref _isTimekeepingPerfect, value); }
         public bool IsTimekeepingGood { get => _isTimekeepingGood; set => SetProperty(ref _isTimekeepingGood, value); }
         public bool IsTimekeepingPoor { get => _isTimekeepingPoor; set => SetProperty(ref _isTimekeepingPoor, value); }
@@ -830,41 +480,23 @@ namespace StudentReportGenerator.Services
         public bool IsContributionRare { get => _isContributionRare; set => SetProperty(ref _isContributionRare, value); }
         public bool IsContributionNever { get => _isContributionNever; set => SetProperty(ref _isContributionNever, value); }
         public string BatchDataInput { get => _batchDataInput; set => SetProperty(ref _batchDataInput, value); }
+        public bool IsBatchModeActive { get => _isBatchModeActive; set { if (SetProperty(ref _isBatchModeActive, value)) { (GenerateBatchCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
         public string CompareStudentName { get => _compareStudentName; set => SetProperty(ref _compareStudentName, value); }
         public string CompareNotes { get => _compareNotes; set => SetProperty(ref _compareNotes, value); }
         public string CompareProvider1 { get => _compareProvider1; set => SetProperty(ref _compareProvider1, value); }
         public string CompareProvider2 { get => _compareProvider2; set => SetProperty(ref _compareProvider2, value); }
         public string CompareOutputRight { get => _compareOutputRight; set => SetProperty(ref _compareOutputRight, value); }
         public bool IsCompareRightVisible { get => _isCompareRightVisible; set => SetProperty(ref _isCompareRightVisible, value); }
-        public string SettingsSchoolName { get => _settingsSchoolName; set => SetProperty(ref _settingsSchoolName, value); }
-        public string SettingsTeacherName { get => _settingsTeacherName; set => SetProperty(ref _settingsTeacherName, value); }
-        public string SettingsSmtpEmail { get => _settingsSmtpEmail; set => SetProperty(ref _settingsSmtpEmail, value); }
-
-        public string SettingsSmtpPassword { get => ConvertToPlainString(_settingsSmtpSecurePassword); set { _settingsSmtpSecurePassword = ConvertToSecureString(value); OnPropertyChanged(); } }
-        public string SettingsMasterPassword { get => _settingsMasterPassword; set => SetProperty(ref _settingsMasterPassword, value); }
-        public string SettingsUnlockPassword { get => _settingsUnlockPassword; set => SetProperty(ref _settingsUnlockPassword, value); }
-        public string SettingsNewFrameworkName { get => _settingsNewFrameworkName; set => SetProperty(ref _settingsNewFrameworkName, value); }
-        public string SettingsNewFrameworkInstruction { get => _settingsNewFrameworkInstruction; set => SetProperty(ref _settingsNewFrameworkInstruction, value); }
-        public string DynamicApiKeyLabel { get => _dynamicApiKeyLabel; set => SetProperty(ref _dynamicApiKeyLabel, value); }
-        public ObservableCollection<ComboBoxItemWrapper> ModelTierOptions { get => _modelTierOptions; set => SetProperty(ref _modelTierOptions, value); }
-        public Brush NavBarBackground { get => _navBarBackground; set => SetProperty(ref _navBarBackground, value); }
-        public string MainAppTitle { get => _mainAppTitle; set => SetProperty(ref _mainAppTitle, value); }
-        public ImageSource? SchoolLogoImage { get => _schoolLogoImage; set => SetProperty(ref _schoolLogoImage, value); }
-        public bool IsLogoVisible { get => _isLogoVisible; set => SetProperty(ref _isLogoVisible, value); }
         public bool IsWelcomeOverlayVisible { get => _isWelcomeOverlayVisible; set => SetProperty(ref _isWelcomeOverlayVisible, value); }
         public bool IsProfileSetupVisible { get => _isProfileSetupVisible; set => SetProperty(ref _isProfileSetupVisible, value); }
         public bool IsWelcomeBackVisible { get => _isWelcomeBackVisible; set => SetProperty(ref _isWelcomeBackVisible, value); }
-        public bool IsSettingsUnlocked { get => _isSettingsUnlocked; set => SetProperty(ref _isSettingsUnlocked, value); }
-        public bool DisableMasterPassword { get => _disableMasterPassword; set => SetProperty(ref _disableMasterPassword, value); }
         public string StatusText { get => _statusText; set => SetProperty(ref _statusText, value); }
         public bool IsGenerating { get => _isGenerating; set { if (SetProperty(ref _isGenerating, value)) { (GenerateSingleCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (EmailReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (RunComparisonCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); (PreviewToneCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
-        public bool IsBatchModeActive { get => _isBatchModeActive; set { if (SetProperty(ref _isBatchModeActive, value)) { (GenerateBatchCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); } } }
         public string HoursSavedDisplay { get => _hoursSavedDisplay; set => SetProperty(ref _hoursSavedDisplay, value); }
         public string TokensUsedDisplay { get => _tokensUsedDisplay; set => SetProperty(ref _tokensUsedDisplay, value); }
         public string NvidiaCountDisplay { get => _nvidiaCountDisplay; set => SetProperty(ref _nvidiaCountDisplay, value); }
         public string GeminiCountDisplay { get => _geminiCountDisplay; set => SetProperty(ref _geminiCountDisplay, value); }
         public string OpenaiCountDisplay { get => _openaiCountDisplay; set => SetProperty(ref _openaiCountDisplay, value); }
         public string ClaudeCountDisplay { get => _claudeCountDisplay; set => SetProperty(ref _claudeCountDisplay, value); }
-        #endregion
     }
 }

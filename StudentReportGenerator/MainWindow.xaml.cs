@@ -7,58 +7,55 @@ using StudentReportGenerator.Services;
 
 namespace StudentReportGenerator
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
+
     {
+        public MainWindow()
+        {
+            InitializeComponent();
+        }
         public MainWindow(MainViewModel viewModel)
         {
             InitializeComponent();
             this.DataContext = viewModel;
-            viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            viewModel.SettingsVM.PropertyChanged += OnSettingsPropertyChanged;
         }
 
-        // ── PasswordBox code-behind bridge handlers ─────────────────────────────────
-        // Pushes the character layers directly into SecureStrings safely as typed.
-
+        // We now route the sensitive password box changes directly into the new SettingsVM
         private void PbSmtpPassword_PasswordChanged(object sender, RoutedEventArgs e)
         {
             if (DataContext is MainViewModel vm)
-                vm.SettingsSmtpPassword = ((PasswordBox)sender).Password;
+                vm.SettingsVM.SettingsSmtpPassword = ((PasswordBox)sender).Password;
         }
 
         private void PbMasterPassword_PasswordChanged(object sender, RoutedEventArgs e)
         {
             if (DataContext is MainViewModel vm)
-                vm.SettingsMasterPassword = ((PasswordBox)sender).Password;
+                vm.SettingsVM.SettingsMasterPassword = ((PasswordBox)sender).Password;
         }
 
         private void PbUnlockPassword_PasswordChanged(object sender, RoutedEventArgs e)
         {
             if (DataContext is MainViewModel vm)
-                vm.SettingsUnlockPassword = ((PasswordBox)sender).Password;
+                vm.SettingsVM.SettingsUnlockPassword = ((PasswordBox)sender).Password;
         }
 
         private void PbApiKey_PasswordChanged(object sender, RoutedEventArgs e)
         {
             if (DataContext is MainViewModel vm)
-                vm.DynamicApiKeyPassword = ((PasswordBox)sender).Password;
+                vm.SettingsVM.DynamicApiKeyPassword = ((PasswordBox)sender).Password;
         }
 
-        private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        private void OnSettingsPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
-            // Clear the unlock panel visual container input when verification succeeds or resets
-            if (e.PropertyName == nameof(MainViewModel.SettingsUnlockPassword) &&
+            if (e.PropertyName == nameof(SettingsViewModel.SettingsUnlockPassword) &&
                 DataContext is MainViewModel vm &&
-                string.IsNullOrEmpty(vm.SettingsUnlockPassword) &&
+                string.IsNullOrEmpty(vm.SettingsVM.SettingsUnlockPassword) &&
                 pbUnlockPassword != null)
             {
                 pbUnlockPassword.Clear();
             }
         }
-
-        // ── Theme Repainting Visual Matrix Canvas ───────────────────────────────────
 
         private void ApplyDarkMode(bool isDark)
         {

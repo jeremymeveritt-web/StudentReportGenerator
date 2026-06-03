@@ -168,7 +168,14 @@ namespace StudentReportGenerator.Services
         {
             if (!string.IsNullOrWhiteSpace(_appState.CurrentSettings.ThemeColorHex))
             {
-                try { NavBarBackground = (SolidColorBrush)new BrushConverter().ConvertFrom(_appState.CurrentSettings.ThemeColorHex); }
+                try
+                {
+                    var convertedBrush = new BrushConverter().ConvertFrom(_appState.CurrentSettings.ThemeColorHex) as SolidColorBrush;
+                    if (convertedBrush != null)
+                    {
+                        NavBarBackground = convertedBrush;
+                    }
+                }
                 catch { NavBarBackground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF392A4C")); }
             }
 
