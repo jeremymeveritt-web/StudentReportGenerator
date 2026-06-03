@@ -32,6 +32,8 @@ namespace StudentReportGenerator
             // 1. Core Services (Singleton = One instance shared across the whole app)
             services.AddSingleton<HttpClient>();
 
+            services.AddSingleton<AppStateService>();
+
             // 2. ViewModels (Transient = Fresh instance every time it's requested)
             services.AddTransient<MainViewModel>();
 
