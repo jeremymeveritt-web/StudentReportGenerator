@@ -12,15 +12,11 @@ namespace StudentReportGenerator
     /// </summary>
     public partial class MainWindow : Window
     {
-        public MainWindow()
+        public MainWindow(MainViewModel viewModel)
         {
             InitializeComponent();
-
-            var vm = new MainViewModel();
-            this.DataContext = vm;
-
-            // Wire up a notification event tracker to sync unmanaged clearing functions safely
-            vm.PropertyChanged += OnViewModelPropertyChanged;
+            this.DataContext = viewModel;
+            viewModel.PropertyChanged += OnViewModelPropertyChanged;
         }
 
         // ── PasswordBox code-behind bridge handlers ─────────────────────────────────
