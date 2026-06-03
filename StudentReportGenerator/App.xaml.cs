@@ -33,7 +33,7 @@ namespace StudentReportGenerator
             services.AddSingleton<HttpClient>();
 
             services.AddSingleton<AppStateService>();
-
+            services.AddTransient<SettingsViewModel>();
             // 2. ViewModels (Transient = Fresh instance every time it's requested)
             services.AddTransient<MainViewModel>();
 
