@@ -10,7 +10,7 @@ namespace StudentReportGenerator.Services
 {
     public static class HistoryDatabaseService
     {
-        private static readonly string FilePath = "report_history_db.dat"; // Changed extension
+        private static readonly string FilePath = FileSandboxService.GetSafeFilePath("report_history_db.dat");
         private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("FacultyFlow_History_Secure_V1");
 
         public static ObservableCollection<SessionRecord> LoadHistory()

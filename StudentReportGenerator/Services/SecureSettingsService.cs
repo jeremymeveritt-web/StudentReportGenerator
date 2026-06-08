@@ -9,7 +9,7 @@ namespace StudentReportGenerator.Services
 {
     public static class SecureSettingsService
     {
-        private static readonly string SettingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.dat");
+        private static readonly string SettingsPath = FileSandboxService.GetSafeFilePath("settings.dat");
 
         // Resolves Bug #3: Appends UserDomainName to form an enterprise-grade cryptographic validation anchor
         private static readonly byte[] Entropy = Encoding.UTF8.GetBytes(Environment.UserName + Environment.UserDomainName + Environment.MachineName);

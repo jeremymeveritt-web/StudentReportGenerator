@@ -204,7 +204,11 @@ namespace StudentReportGenerator.Services
             var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Images (*.png;*.jpg)|*.png;*.jpg" };
             if (dialog.ShowDialog() == true)
             {
-                _appState.CurrentSettings.SchoolLogoPath = dialog.FileName;
+               
+                string extension = Path.GetExtension(dialog.FileName);
+                string clonedPath = FileSandboxService.CloneAssetToSandbox(dialog.FileName, $"school_logo{extension}");
+
+                _appState.CurrentSettings.SchoolLogoPath = clonedPath;
                 _appState.SaveSettings();
                 ApplyBrandingConfiguration();
             }
