@@ -296,7 +296,7 @@ namespace StudentReportGenerator.Services
             if (string.IsNullOrWhiteSpace(BatchDataInput)) return;
             IsBatchModeActive = true;
             IsCompareRightVisible = false;
-            GeneratedReportOutput = "Starting batch processing...\n";
+            GeneratedReportOutput = "🚀 Initializing Multi-Threaded Batch Processor...\n";
 
             var lines = BatchDataInput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             _batchCancellationTokenSource = new CancellationTokenSource();
@@ -316,14 +316,34 @@ namespace StudentReportGenerator.Services
                     if (string.IsNullOrWhiteSpace(studentNameClean)) continue;
 
                     StatusText = $"Generating batch card {i + 1} of {lines.Length}...";
-                    await ProcessSingleReportExecutionAsync(studentNameClean, studentNotesClean, _appState.CurrentSettings.AiProvider, report => GeneratedReportOutput = report);
 
-                    if (i < lines.Length - 1 && !token.IsCancellationRequested) await Task.Delay(1500, token);
+                    
+                    await ProcessSingleReportExecutionAsync(studentNameClean, studentNotesClean, _appState.CurrentSettings.AiProvider, report =>
+                    {
+                        GeneratedReportOutput += $"\n\n=========================================\n📝 STUDENT: {studentNameClean.ToUpper()}\n=========================================\n{report}\n";
+                    });
+
+
+                    if (i < lines.Length - 1 && !token.IsCancellationRequested)
+                    {
+                        await Task.Delay(1500, token);
+                    }
                 }
+
+                GeneratedReportOutput += "\n\n✅ BATCH PROCESSING COMPLETE.";
                 StatusText = "Batch update completed.";
             }
-            catch (TaskCanceledException) { StatusText = "Batch Stopped."; }
-            finally { IsBatchModeActive = false; _batchCancellationTokenSource?.Dispose(); _batchCancellationTokenSource = null; }
+            catch (TaskCanceledException)
+            {
+                GeneratedReportOutput += "\n\n🛑 BATCH ABORTED BY USER.";
+                StatusText = "Batch Stopped.";
+            }
+            finally
+            {
+                IsBatchModeActive = false;
+                _batchCancellationTokenSource?.Dispose();
+                _batchCancellationTokenSource = null;
+            }
         }
 
         private void CancelBatchGeneration()
