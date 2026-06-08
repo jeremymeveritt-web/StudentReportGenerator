@@ -227,7 +227,6 @@ namespace StudentReportGenerator.Services
 
             try
             {
-                // Hand the entire complex workload off to the Orchestrator!
                 var response = await _orchestrator.GenerateAsync(request, provider);
                 IsGenerating = false;
 
@@ -235,7 +234,6 @@ namespace StudentReportGenerator.Services
                 {
                     onCompleteOutput(response.GeneratedReport);
 
-                    // Only save to history if this is a standard generation (not a side-by-side compare test)
                     if (provider == _appState.CurrentSettings.AiProvider)
                     {
                         SessionHistory.Insert(0, new SessionRecord
@@ -252,22 +250,25 @@ namespace StudentReportGenerator.Services
                     return true;
                 }
 
-                onCompleteOutput($"API Error: {response.ErrorMessage}");
-                StatusText = "Generation failed.";
+                
+                onCompleteOutput("We ran into a slight issue connecting to the AI provider. This is usually temporary. Please wait a moment and try again.");
+                StatusText = "Service unavailable.";
                 return false;
             }
             catch (TaskCanceledException)
             {
                 IsGenerating = false;
-                onCompleteOutput("CONNECTION TIMEOUT: The downstream system connection window expired.");
+                
+                onCompleteOutput("The connection timed out. Please check your school's internet connection or firewall and try again.");
                 StatusText = "Connection timed out.";
                 return false;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 IsGenerating = false;
-                onCompleteOutput($"SYSTEM EXCEPTION: {ex.Message}");
-                StatusText = "Error encountered.";
+                
+                onCompleteOutput("An unexpected software error occurred while generating this report. If this persists, please restart FacultyFlow or contact IT support.");
+                StatusText = "Generation error.";
                 return false;
             }
         }
@@ -375,17 +376,22 @@ namespace StudentReportGenerator.Services
             string plainSmtpPassword = CryptoService.DecryptSecret(_appState.CurrentSettings.SmtpPassword);
             if (string.IsNullOrWhiteSpace(_appState.CurrentSettings.SmtpEmail) || string.IsNullOrWhiteSpace(plainSmtpPassword))
             {
-                MessageBox.Show("Please configure your SMTP credentials in Profile Settings.", "Missing Credentials", MessageBoxButton.OK, MessageBoxImage.Warning);
+                // UX POLISH: Better instructions
+                MessageBox.Show("Please configure your school email address and app password in the Profile Settings tab before sending emails.", "Email Setup Required", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             try { _ = new System.Net.Mail.MailAddress(ParentEmail); }
-            catch { MessageBox.Show("Invalid parent email address.", "Error", MessageBoxButton.OK, MessageBoxImage.Error); return; }
+            catch
+            {
+                MessageBox.Show("The parent email address provided is not formatted correctly. Please double-check it.", "Check Email Address", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
 
             string studentName = SanitizeControlOutput(SelectedStudentName);
             string subjectLine = string.IsNullOrWhiteSpace(studentName) ? "Student Update Report" : $"Performance Update — {studentName}";
 
-            StatusText = "Sending email...";
+            StatusText = "Sending email securely...";
             try
             {
                 var securePwd = new SecureString();
@@ -395,7 +401,12 @@ namespace StudentReportGenerator.Services
                 await EmailService.SendEmailAsync(ParentEmail, subjectLine, GeneratedReportOutput, _appState.CurrentSettings.SmtpServer, _appState.CurrentSettings.SmtpPort, _appState.CurrentSettings.SmtpEmail, securePwd);
                 StatusText = "Email sent successfully.";
             }
-            catch (Exception ex) { StatusText = $"Email failed: {ex.Message}"; }
+            catch
+            {
+                // UX POLISH: Hide the SMTP socket exception trace
+                StatusText = "Email failed to send. Check firewall/password.";
+                MessageBox.Show("We couldn't connect to your email server. Please verify that your IT department hasn't blocked SMTP traffic, and ensure your App Password is correct.", "Delivery Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void ImportBatchCsv()
