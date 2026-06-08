@@ -29,19 +29,19 @@ namespace StudentReportGenerator
 
         private void ConfigureServices(IServiceCollection services)
         {
-            // 1. Core Services (Singleton = One instance shared across the whole app)
+            // Core Services (Singleton = One instance shared across the whole app)
             services.AddSingleton<HttpClient>();
-
             services.AddSingleton<AppStateService>();
+
+            // ADD THIS NEW LINE:
+            services.AddSingleton<ReportOrchestratorService>();
+
+            // ViewModels
             services.AddTransient<SettingsViewModel>();
-            // 2. ViewModels (Transient = Fresh instance every time it's requested)
             services.AddTransient<MainViewModel>();
 
-            // 3. Views / Windows
+            // Views
             services.AddTransient<MainWindow>();
-
-            // Note: As we break apart the God-Class, we will register the new 
-            // smaller ViewModels and AI Services right here!
         }
     }
 }

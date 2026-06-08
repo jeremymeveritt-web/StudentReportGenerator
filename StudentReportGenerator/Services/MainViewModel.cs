@@ -18,6 +18,7 @@ namespace StudentReportGenerator.Services
     public class MainViewModel : ViewModelBase
     {
         private static readonly HttpClient _sharedHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        private readonly ReportOrchestratorService _orchestrator;
         private readonly AppStateService _appState;
 
         // Expose the Settings ViewModel so the UI can bind to it!
@@ -100,10 +101,11 @@ namespace StudentReportGenerator.Services
         public ICommand CompareHistoryCommand { get; }
         public ICommand DeleteHistoryCommand { get; }
 
-        public MainViewModel(AppStateService appState, SettingsViewModel settingsVM)
+        public MainViewModel(AppStateService appState, SettingsViewModel settingsVM, ReportOrchestratorService orchestrator)
         {
             _appState = appState;
             SettingsVM = settingsVM;
+            _orchestrator = orchestrator;
 
             GenerateSingleCommand = new AsyncRelayCommand(_ => GenerateSingleReportAsync(), _ => !IsGenerating);
             SaveStudentCommand = new RelayCommand(_ => SaveStudent());
@@ -200,44 +202,16 @@ namespace StudentReportGenerator.Services
         private async Task<bool> ProcessSingleReportExecutionAsync(string name, string notes, string provider, Action<string> onCompleteOutput)
         {
             IsGenerating = true;
-            string cleanProvider = SanitizeControlOutput(provider);
-            string activeKey = string.Empty;
-            string activeModel = string.Empty;
-            IAiService activeAiEngine;
 
-            if (cleanProvider.Contains("NVIDIA"))
-            {
-                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.NvidiaApiKey);
-                activeModel = _appState.CurrentSettings.NvidiaModelTier;
-                activeAiEngine = new NvidiaReportService(_sharedHttpClient, activeKey);
-            }
-            else if (cleanProvider.Contains("OpenAI"))
-            {
-                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.OpenAiApiKey);
-                activeModel = _appState.CurrentSettings.OpenAiModelTier;
-                activeAiEngine = new OpenAiReportService(_sharedHttpClient, activeKey);
-            }
-            else if (cleanProvider.Contains("Claude"))
-            {
-                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.ClaudeApiKey);
-                activeModel = _appState.CurrentSettings.ClaudeModelTier;
-                activeAiEngine = new ClaudeReportService(_sharedHttpClient, activeKey);
-            }
-            else
-            {
-                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.GeminiApiKey);
-                activeModel = _appState.CurrentSettings.GeminiModelTier;
-                activeAiEngine = new GeminiReportService(_sharedHttpClient, activeKey);
-            }
-
-            if (string.IsNullOrWhiteSpace(activeKey))
-            {
-                onCompleteOutput("ERROR: Missing API Key inside configuration profiles. Please check Settings.");
-                IsGenerating = false;
-                return false;
-            }
-
+            string dbTargetGrade = string.Empty;
+            string dbSupportNeeds = string.Empty;
             var match = _studentDatabase.FirstOrDefault(s => s.FullName.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                dbTargetGrade = match.TargetGrade;
+                dbSupportNeeds = match.SupportNeeds;
+            }
+
             var request = new ReportRequest
             {
                 StudentName = name,
@@ -247,38 +221,55 @@ namespace StudentReportGenerator.Services
                 SelectedFramework = SelectedFramework?.Instruction ?? string.Empty,
                 SchoolName = _appState.CurrentSettings.SchoolName,
                 TeacherSignoff = _appState.CurrentSettings.TeacherSignoff,
-                SelectedModel = activeModel,
-                TargetGrade = match?.TargetGrade ?? string.Empty,
-                SupportNeeds = match?.SupportNeeds ?? string.Empty
+                TargetGrade = dbTargetGrade,
+                SupportNeeds = dbSupportNeeds
             };
 
-            var response = await activeAiEngine.GenerateReportAsync(request);
-            IsGenerating = false;
-
-            if (response.IsSuccess)
+            try
             {
-                onCompleteOutput(response.GeneratedReport);
-                SessionHistory.Insert(0, new SessionRecord { StudentName = request.StudentName, GeneratedReport = response.GeneratedReport, Timestamp = DateTime.Now });
-                HistoryDatabaseService.SaveHistory(SessionHistory);
+                // Hand the entire complex workload off to the Orchestrator!
+                var response = await _orchestrator.GenerateAsync(request, provider);
+                IsGenerating = false;
 
-                int words = response.GeneratedReport.Split(' ').Length;
-                _appState.CurrentSettings.TotalTokensEstimated += (long)(words * 1.3);
-                _appState.CurrentSettings.TotalReportsGenerated++;
+                if (response.IsSuccess)
+                {
+                    onCompleteOutput(response.GeneratedReport);
 
-                if (cleanProvider.Contains("NVIDIA")) _appState.CurrentSettings.NvidiaReportsCount++;
-                else if (cleanProvider.Contains("OpenAI")) _appState.CurrentSettings.OpenAiReportsCount++;
-                else if (cleanProvider.Contains("Claude")) _appState.CurrentSettings.ClaudeReportsCount++;
-                else _appState.CurrentSettings.GeminiReportsCount++;
+                    // Only save to history if this is a standard generation (not a side-by-side compare test)
+                    if (provider == _appState.CurrentSettings.AiProvider)
+                    {
+                        SessionHistory.Insert(0, new SessionRecord
+                        {
+                            StudentName = request.StudentName,
+                            GeneratedReport = response.GeneratedReport,
+                            Timestamp = DateTime.Now
+                        });
+                        HistoryDatabaseService.SaveHistory(SessionHistory);
+                    }
 
-                _appState.SaveSettings();
-                UpdateDashboardMetricsDisplay();
-                StatusText = "Ready.";
-                return true;
+                    UpdateDashboardMetricsDisplay();
+                    StatusText = "Ready.";
+                    return true;
+                }
+
+                onCompleteOutput($"API Error: {response.ErrorMessage}");
+                StatusText = "Generation failed.";
+                return false;
             }
-
-            onCompleteOutput(response.ErrorMessage);
-            StatusText = "Error encountered.";
-            return false;
+            catch (TaskCanceledException)
+            {
+                IsGenerating = false;
+                onCompleteOutput("CONNECTION TIMEOUT: The downstream system connection window expired.");
+                StatusText = "Connection timed out.";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                IsGenerating = false;
+                onCompleteOutput($"SYSTEM EXCEPTION: {ex.Message}");
+                StatusText = "Error encountered.";
+                return false;
+            }
         }
 
         private async Task PreviewToneAsync()
