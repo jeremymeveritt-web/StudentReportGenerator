@@ -100,6 +100,7 @@ namespace StudentReportGenerator.Services
         public ICommand PreviewToneCommand { get; }
         public ICommand CompareHistoryCommand { get; }
         public ICommand DeleteHistoryCommand { get; }
+        public ICommand ClearBatchCommand { get; }
 
         public MainViewModel(AppStateService appState, SettingsViewModel settingsVM, ReportOrchestratorService orchestrator)
         {
@@ -107,6 +108,7 @@ namespace StudentReportGenerator.Services
             SettingsVM = settingsVM;
             _orchestrator = orchestrator;
 
+            ClearBatchCommand = new RelayCommand(_ => BatchDataInput = string.Empty);
             GenerateSingleCommand = new AsyncRelayCommand(_ => GenerateSingleReportAsync(), _ => !IsGenerating);
             SaveStudentCommand = new RelayCommand(_ => SaveStudent());
             DeleteStudentCommand = new RelayCommand(_ => DeleteStudent());
@@ -419,17 +421,27 @@ namespace StudentReportGenerator.Services
                     var lines = File.ReadAllLines(dialog.FileName);
                     var sb = new StringBuilder();
                     var parser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
+                    int skippedHeader = 0;
+
                     foreach (var line in lines)
                     {
                         if (string.IsNullOrWhiteSpace(line)) continue;
                         var parts = parser.Split(line).Select(s => s.Trim('"', ' ')).ToArray();
-                        if (parts.Length >= 2)
+                        if (parts.Length >= 1)
                         {
-                            if (parts[0].ToLower().Contains("name") && parts[1].ToLower().Contains("note")) continue;
-                            sb.AppendLine($"{parts[0]} | {parts[1]}");
+                            string studentName = parts[0].Trim();
+                            if (studentName.ToLower().Contains("name"))
+                            {
+                                skippedHeader++;
+                                continue;
+                            }
+                            string studentNotes = parts.Length >= 2 ? parts[1].Trim() : string.Empty;
+
+                            sb.AppendLine($"{studentName} | {studentNotes}");
                         }
                     }
                     BatchDataInput = sb.ToString();
+                    StatusText = $"Imported CSV (Skipped {skippedHeader} header rows).";
                 }
                 catch (Exception ex) { MessageBox.Show($"File error: {ex.Message}"); }
             }

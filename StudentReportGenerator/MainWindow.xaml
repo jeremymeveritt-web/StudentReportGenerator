@@ -283,9 +283,13 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Batch Roster Data:" FontWeight="SemiBold" VerticalAlignment="Bottom"/>
-                            <Button Command="{Binding ImportBatchCsvCommand}" Grid.Column="1" Content="Upload CSV List" Style="{StaticResource ModernButtonStyle}" Background="#FFE0F7FA" Foreground="#FF0097A7" Width="130" Height="30" />
+
+                            <Button Command="{Binding ClearBatchCommand}" Grid.Column="1" Content="🗑️ Clear Batch" Style="{StaticResource ModernButtonStyle}" Background="#FFFFEBEE" Foreground="#FFD32F2F" Width="105" Height="30" Margin="0,0,10,0"/>
+
+                            <Button Command="{Binding ImportBatchCsvCommand}" Grid.Column="2" Content="Upload CSV List" Style="{StaticResource ModernButtonStyle}" Background="#FFE0F7FA" Foreground="#FF0097A7" Width="130" Height="30" />
                         </Grid>
                         <Grid Height="280">
                             <TextBox Text="{Binding BatchDataInput, UpdateSourceTrigger=PropertyChanged}" SpellCheck.IsEnabled="True" TextWrapping="Wrap" AcceptsReturn="True" Margin="0,0,0,15" Padding="10" VerticalScrollBarVisibility="Auto" FontSize="13"/>
