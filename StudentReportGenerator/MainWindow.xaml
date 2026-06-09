@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:services="clr-namespace:StudentReportGenerator.Services"
         xmlns:converters="clr-namespace:StudentReportGenerator.Converters"
-        Title="Faculty AI" Height="820" Width="1320"
+        Title="Faculty AI" Height="700" Width="1100"
         MinWidth="1100" MinHeight="700"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource ThemeAppBg}" Foreground="{DynamicResource ThemeText}">
@@ -260,6 +260,7 @@
 
                                     <TextBlock Text="Teacher Observations (Optional):" FontWeight="SemiBold" Margin="0,10,0,5"/>
                                     <Grid Height="80">
+                                        <TextBox Text="{Binding CustomNotes, UpdateSourceTrigger=PropertyChanged}" SpellCheck.IsEnabled="True" TextWrapping="Wrap" AcceptsReturn="True" Padding="8" FontSize="13"/>
                                     </Grid>
                                 </StackPanel>
                             </Border>
