@@ -191,12 +191,21 @@
                                     <ColumnDefinition Width="15"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="Word Count:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                                    <ComboBox SelectedValue="{Binding TargetWordCount}" SelectedValuePath="Tag" Height="35" Padding="5" FontSize="13">
-                                        <ComboBoxItem Content="~100 Words" Tag="100"/>
-                                        <ComboBoxItem Content="~150 Words" Tag="150" IsSelected="True"/>
-                                        <ComboBoxItem Content="~200 Words" Tag="200"/>
+                                <!-- UI Bug #3 Fix: Word Count Selector for Batch Workspace -->
+                                <StackPanel Orientation="Vertical" Margin="0,0,0,15">
+                                    <TextBlock Text="TARGET WORD COUNT:" 
+               FontSize="11" 
+               FontWeight="Bold" 
+               Foreground="#7B1FA2" 
+               Margin="0,0,0,5"/>
+                                    <ComboBox SelectedValue="{Binding TargetWordCount, Mode=TwoWay}" 
+              SelectedValuePath="Tag" 
+              Height="35" 
+              Padding="5" 
+              FontSize="13">
+                                        <ComboBoxItem Content="~300 Words" Tag="300"/>
+                                        <ComboBoxItem Content="~500 Words" Tag="500"/>
+                                        <ComboBoxItem Content="~800 Words" Tag="800"/>
                                     </ComboBox>
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
