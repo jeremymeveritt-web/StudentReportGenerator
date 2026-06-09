@@ -17,7 +17,7 @@ namespace StudentReportGenerator.Services
 {
     public class MainViewModel : ViewModelBase
     {
-        private static readonly HttpClient _sharedHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        private static readonly HttpClient _sharedHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
         private readonly ReportOrchestratorService _orchestrator;
         private readonly AppStateService _appState;
 

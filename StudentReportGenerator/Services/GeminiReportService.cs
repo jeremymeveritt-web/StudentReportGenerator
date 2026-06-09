@@ -22,7 +22,7 @@ namespace StudentReportGenerator.Services
                 },
                 generationConfig = new
                 {
-                    maxOutputTokens = 800,
+                    max_tokens = Math.Max(1200, request.WordCount * 2),
                     temperature = 0.7
                 }
             };

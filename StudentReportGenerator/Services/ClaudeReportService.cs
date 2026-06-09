@@ -15,7 +15,7 @@ namespace StudentReportGenerator.Services
             var payload = new
             {
                 model = request.SelectedModel,
-                max_tokens = 800,
+                max_tokens = Math.Max(1200, request.WordCount * 2),
                 messages = new[] { new { role = "user", content = prompt } }
             };
 

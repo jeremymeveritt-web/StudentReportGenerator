@@ -81,7 +81,7 @@ namespace StudentReportGenerator.Models
         public string AiProvider { get; set; } = "NVIDIA NIM (Free)";
         public string GeminiModelTier { get; set; } = "gemini-2.5-flash";
         public string OpenAiModelTier { get; set; } = "gpt-4o-mini";
-        public string ClaudeModelTier { get; set; } = "claude-3-haiku-20240307";
+        public string ClaudeModelTier { get; set; } = "claude-3-5-haiku-20241022";
         public string NvidiaModelTier { get; set; } = "meta/llama-3.1-405b-instruct";
         public string ThemeColorHex { get; set; } = "#FF392A4C";
         public string SchoolLogoPath { get; set; } = string.Empty;
