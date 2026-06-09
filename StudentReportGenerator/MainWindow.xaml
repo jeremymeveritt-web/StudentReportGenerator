@@ -640,6 +640,7 @@
                     <Button Command="{Binding EmailReportCommand}" Content="✉️ Email Parent" Style="{StaticResource ModernButtonStyle}" Background="#FFFFE0B2" Foreground="#FFE65100" Margin="5,5,0,0" />
                     <Button Command="{Binding SavePdfCommand}" Content="Export PDF" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FFF44336" Margin="5,5,0,0" />
                     <Button Command="{Binding SaveWordCommand}" Content="Export Word (.docx)" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FF1976D2" Margin="5,5,0,0" />
+                    <Button Command="{Binding UpdateHistoryEditCommand}" Content="💾 Save Edits" Style="{StaticResource ModernButtonStyle}" Background="#E8F5E9" Foreground="#2E7D32" Margin="5,5,0,0" />
                 </WrapPanel>
             </Grid>
         </Border>

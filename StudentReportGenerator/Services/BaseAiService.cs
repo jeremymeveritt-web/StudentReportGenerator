@@ -21,33 +21,48 @@ namespace StudentReportGenerator.Services
 
         public async Task<ReportResponse> GenerateReportAsync(ReportRequest request)
         {
-            try
+            int maxRetries = 3;
+            int delayMs = 2000; 
+
+            for (int i = 0; i <= maxRetries; i++)
             {
-                // 1. Ask the specific child class (OpenAI, Gemini, etc.) for its unique request format
-                var httpRequest = BuildRequest(request);
-
-                // 2. We handle the actual sending and waiting right here
-                var response = await _httpClient.SendAsync(httpRequest);
-                string responseBody = await response.Content.ReadAsStringAsync();
-
-                // 3. Centralized error handling
-                if (!response.IsSuccessStatusCode)
+                try
                 {
-                    return new ReportResponse { IsSuccess = false, ErrorMessage = $"API Error ({response.StatusCode}): {responseBody}" };
-                }
+                    
+                    var httpRequest = BuildRequest(request);
 
-                // 4. Ask the child class to pluck the text out of the JSON
-                string generatedText = ParseResponse(responseBody);
-                return new ReportResponse { IsSuccess = true, GeneratedReport = generatedText.Trim() };
+                    
+                    var response = await _httpClient.SendAsync(httpRequest);
+
+                    
+                    if (response.IsSuccessStatusCode)
+                    {
+                        string responseBody = await response.Content.ReadAsStringAsync();
+                        string generatedText = ParseResponse(responseBody);
+                        return new ReportResponse { IsSuccess = true, GeneratedReport = generatedText.Trim() };
+                    }
+
+                    
+                    if (response.StatusCode == (System.Net.HttpStatusCode)429 && i < maxRetries)
+                    {
+                        await Task.Delay(delayMs);
+                        delayMs *= 2; 
+                        continue;     
+                    }
+                    string errBody = await response.Content.ReadAsStringAsync();
+                    return new ReportResponse { IsSuccess = false, ErrorMessage = $"API Error ({response.StatusCode}): {errBody}" };
+                }
+                catch (TaskCanceledException)
+                {
+                    return new ReportResponse { IsSuccess = false, ErrorMessage = "CONNECTION TIMEOUT: The downstream system connection window expired." };
+                }
+                catch (Exception ex)
+                {
+                    return new ReportResponse { IsSuccess = false, ErrorMessage = $"Network/Parsing Error: {ex.Message}" };
+                }
             }
-            catch (TaskCanceledException)
-            {
-                return new ReportResponse { IsSuccess = false, ErrorMessage = "CONNECTION TIMEOUT: The downstream system connection window expired." };
-            }
-            catch (Exception ex)
-            {
-                return new ReportResponse { IsSuccess = false, ErrorMessage = $"Network/Parsing Error: {ex.Message}" };
-            }
+
+            return new ReportResponse { IsSuccess = false, ErrorMessage = "API Error: Maximum retry attempts exceeded." };
         }
 
         // Child classes MUST provide these two methods

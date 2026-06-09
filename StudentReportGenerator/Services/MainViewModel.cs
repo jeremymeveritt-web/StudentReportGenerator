@@ -78,6 +78,7 @@ namespace StudentReportGenerator.Services
         private string _claudeCountDisplay = "0";
 
         // Commands Definitions
+        public ICommand UpdateHistoryEditCommand { get; }
         public ICommand GenerateSingleCommand { get; }
         public ICommand SaveStudentCommand { get; }
         public ICommand DeleteStudentCommand { get; }
@@ -108,6 +109,7 @@ namespace StudentReportGenerator.Services
             SettingsVM = settingsVM;
             _orchestrator = orchestrator;
 
+            UpdateHistoryEditCommand = new RelayCommand(_ => UpdateHistoryEdit(), _ => !string.IsNullOrWhiteSpace(GeneratedReportOutput)); ;
             ClearBatchCommand = new RelayCommand(_ => BatchDataInput = string.Empty);
             GenerateSingleCommand = new AsyncRelayCommand(_ => GenerateSingleReportAsync(), _ => !IsGenerating);
             SaveStudentCommand = new RelayCommand(_ => SaveStudent());
@@ -291,6 +293,21 @@ namespace StudentReportGenerator.Services
             {
                 MessageBox.Show(report, $"Tone Preview: {SelectedFramework.Name}", MessageBoxButton.OK, MessageBoxImage.Information);
             });
+        }
+
+        private async void UpdateHistoryEdit()
+        {
+            
+            var record = SessionHistory.FirstOrDefault(x => x.StudentName.Equals(SelectedStudentName, StringComparison.OrdinalIgnoreCase));
+            if (record != null)
+            {
+                record.GeneratedReport = GeneratedReportOutput;
+                HistoryDatabaseService.SaveHistory(SessionHistory);
+
+                StatusText = "✅ Edits saved to history log!";
+                await Task.Delay(2000);
+                StatusText = "Ready.";
+            }
         }
 
         private void DeleteHistoryRecord(object? parameter)
@@ -516,7 +533,33 @@ namespace StudentReportGenerator.Services
 
         public SessionRecord? SelectedHistoryItem { get => _selectedHistoryItem; set => SetProperty(ref _selectedHistoryItem, value); }
         public int SelectedNavigationIndex { get => _selectedNavigationIndex; set { if (SetProperty(ref _selectedNavigationIndex, value)) { if (_selectedNavigationIndex < 3 && !string.IsNullOrEmpty(_appState.CurrentSettings.MasterPassword)) { SettingsVM.IsSettingsUnlocked = false; } } } }
-        public string SelectedStudentName { get => _selectedStudentName; set { string clean = SanitizeControlOutput(value); if (SetProperty(ref _selectedStudentName, clean)) { var m = _studentDatabase.FirstOrDefault(x => x.FullName == clean); if (m != null) { StudentClass = m.ClassName; ParentEmail = m.ParentEmail; TargetGrade = m.TargetGrade; SupportNeeds = m.SupportNeeds; } } } }
+        public string SelectedStudentName
+        {
+            get => _selectedStudentName;
+            set
+            {
+                string clean = SanitizeControlOutput(value);
+                if (SetProperty(ref _selectedStudentName, clean))
+                {
+                    var m = _studentDatabase.FirstOrDefault(x => x.FullName == clean);
+                    if (m != null)
+                    {
+                        StudentClass = m.ClassName;
+                        ParentEmail = m.ParentEmail;
+                        TargetGrade = m.TargetGrade;
+                        SupportNeeds = m.SupportNeeds;
+                    }
+                    CustomNotes = string.Empty;
+                    IsTimekeepingPerfect = true;
+                    IsTimekeepingGood = false;
+                    IsTimekeepingPoor = false;
+                    IsContributionEnthusiastic = true;
+                    IsContributionOccasional = false;
+                    IsContributionRare = false;
+                    IsContributionNever = false;
+                }
+            }
+        }
         public string StudentClass { get => _studentClass; set => SetProperty(ref _studentClass, value); }
         public string TargetGrade { get => _targetGrade; set => SetProperty(ref _targetGrade, value); }
         public string SupportNeeds { get => _supportNeeds; set => SetProperty(ref _supportNeeds, value); }
