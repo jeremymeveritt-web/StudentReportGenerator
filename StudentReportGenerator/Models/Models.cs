@@ -16,6 +16,7 @@ namespace StudentReportGenerator.Models
         public string SelectedModel { get; set; } = string.Empty;
         public string TargetGrade { get; set; } = string.Empty;
         public string SupportNeeds { get; set; } = string.Empty;
+        public string Pronouns { get; set; } = "They/Them";
     }
 
     public class ReportResponse
@@ -70,6 +71,7 @@ namespace StudentReportGenerator.Models
         public string ParentEmail { get; set; } = string.Empty;
         public string TargetGrade { get; set; } = string.Empty;
         public string SupportNeeds { get; set; } = string.Empty;
+        public string Pronouns { get; set; } = "They/Them";
     }
 
     public class AppSettings

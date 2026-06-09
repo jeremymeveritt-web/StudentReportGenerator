@@ -168,6 +168,14 @@
                                     <ColumnDefinition Width="8"/>
                                     <ColumnDefinition Width="1.5*"/>
                                 </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Pronouns:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                    <ComboBox Text="{Binding SelectedPronouns}" IsEditable="True" Height="35" Padding="5" FontSize="13">
+                                        <ComboBoxItem Content="He/Him"/>
+                                        <ComboBoxItem Content="She/Her"/>
+                                        <ComboBoxItem Content="They/Them"/>
+                                    </ComboBox>
+                                </StackPanel>
                                 <StackPanel Grid.Column="0">
                                     <TextBlock Text="Target Grade:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                                     <TextBox Text="{Binding TargetGrade, UpdateSourceTrigger=PropertyChanged}" Height="35" Padding="8" FontSize="13"/>
@@ -193,7 +201,7 @@
                                     <ColumnDefinition Width="15"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <!-- UI Bug #3 Fix: Word Count Selector for Batch Workspace -->
+
                                 <StackPanel Orientation="Vertical" Margin="0,0,0,15">
                                     <TextBlock Text="TARGET WORD COUNT:" 
                FontSize="11" 

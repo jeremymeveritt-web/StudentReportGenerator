@@ -44,6 +44,7 @@ namespace StudentReportGenerator.Services
         public ICommand UploadLogoCommand { get; }
         public ICommand AddFrameworkCommand { get; }
 
+
         public SettingsViewModel(AppStateService appState)
         {
             _appState = appState;
