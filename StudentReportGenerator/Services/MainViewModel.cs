@@ -158,7 +158,8 @@ namespace StudentReportGenerator.Services
 
         private void UpdateDashboardMetricsDisplay()
         {
-            double totalMinutesSaved = _appState.CurrentSettings.TotalReportsGenerated * 5.0;
+            double totalMinutesSaved = _appState.CurrentSettings.TotalReportsGenerated * 10.0;
+            double hoursSaved = totalMinutesSaved / 60.0;
             HoursSavedDisplay = Math.Round(totalMinutesSaved / 60.0, 1).ToString();
             TokensUsedDisplay = _appState.CurrentSettings.TotalTokensEstimated.ToString("N0");
             NvidiaCountDisplay = _appState.CurrentSettings.NvidiaReportsCount.ToString("N0");
@@ -487,7 +488,18 @@ namespace StudentReportGenerator.Services
         private void DeleteStudent() { string clean = SanitizeControlOutput(SelectedStudentName); var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match != null) { _studentDatabase.Remove(match); StudentDatabaseService.SaveStudents(_studentDatabase); StudentClass = ParentEmail = TargetGrade = SupportNeeds = string.Empty; SelectedStudentName = string.Empty; RefreshCollections(); StatusText = "Record dropped."; } }
         private void EnterApplication() { IsWelcomeOverlayVisible = false; }
         private void EditWelcomeProfile() { IsWelcomeBackVisible = false; IsProfileSetupVisible = true; SelectedNavigationIndex = 3; }
-        private void CopyReportToClipboard() { if (!string.IsNullOrEmpty(GeneratedReportOutput)) { try { Clipboard.SetText(GeneratedReportOutput); StatusText = "Copied."; } catch { StatusText = "Clipboard blocked."; } } }
+        private async void CopyReportToClipboard()
+        {
+            if (!string.IsNullOrWhiteSpace(GeneratedReportOutput))
+            {
+                System.Windows.Clipboard.SetText(GeneratedReportOutput);
+
+                // UX POLISH: Flash the status and reset it
+                StatusText = "✅ Copied to clipboard!";
+                await Task.Delay(2000); // Wait 2 seconds
+                StatusText = "Ready.";
+            }
+        }
         private void SaveAsWord() { var d = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (d.ShowDialog() == true) WordExportService.ExportSingle(d.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
         private void SaveAsPdf() { var d = new Microsoft.Win32.SaveFileDialog { Filter = "PDF (*.pdf)|*.pdf" }; if (d.ShowDialog() == true) PdfExportService.ExportSingle(d.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
         private void ExportBatchWord() { if (SessionHistory.Count > 0) { var d = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (d.ShowDialog() == true) WordExportService.ExportBatch(d.FileName, SessionHistory.ToList()); } }

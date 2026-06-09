@@ -3,7 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:services="clr-namespace:StudentReportGenerator.Services"
         xmlns:converters="clr-namespace:StudentReportGenerator.Converters"
-        Title="AI Student Report Generator" Height="820" Width="1320"
+        Title="Faculty AI" Height="820" Width="1320"
+        MinWidth="1100" MinHeight="700"
+        WindowStartupLocation="CenterScreen"
         Background="{DynamicResource ThemeAppBg}" Foreground="{DynamicResource ThemeText}">
 
     <Window.Resources>
@@ -258,7 +260,6 @@
 
                                     <TextBlock Text="Teacher Observations (Optional):" FontWeight="SemiBold" Margin="0,10,0,5"/>
                                     <Grid Height="80">
-                                        <TextBox Text="{Binding CustomNotes, UpdateSourceTrigger=PropertyChanged}" SpellCheck.IsEnabled="True" TextWrapping="Wrap" AcceptsReturn="True" Padding="8" FontSize="13"/>
                                     </Grid>
                                 </StackPanel>
                             </Border>
@@ -320,7 +321,7 @@
                             </Style>
                         </StackPanel.Style>
                         <TextBlock Text="MODEL LAB COMPARISON" FontWeight="Bold" Foreground="#9C27B0" Margin="0,10,0,5"/>
-                        <TextBlock Text="Evaluate language accuracy synchronously across dual neural networks." Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" FontSize="13" Margin="0,0,0,20"/>
+                        <TextBlock Text="Compare how two different AI models write the same report." Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" FontSize="13" Margin="0,0,0,20"/>
                         <TextBlock Text="Student Name:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding CompareStudentName, UpdateSourceTrigger=PropertyChanged}" Height="35" Margin="0,0,0,20" Padding="8" FontSize="13"/>
                         <TextBlock Text="Evaluation Notes:" FontWeight="SemiBold" Margin="0,0,0,5"/>
@@ -659,7 +660,7 @@
                         <TextBlock Text="HISTORY LOG" FontWeight="Bold" FontSize="16" Foreground="#FF9C27B0" VerticalAlignment="Center"/>
                         <Button Command="{Binding ShowAllHistoryCommand}" Grid.Column="1" Content="Clear Filter" Style="{StaticResource ModernButtonStyle}" Height="25" Padding="10,0" />
                     </Grid>
-                    <TextBlock Text="Select a record to preview or load historical verification split layers." FontSize="12" Margin="0,4,0,10" Foreground="{DynamicResource ThemeMutedText}"/>
+                    <TextBlock Text="past reports." FontSize="12" Margin="0,4,0,10" Foreground="{DynamicResource ThemeMutedText}"/>
                 </StackPanel>
 
                 <ListBox ItemsSource="{Binding SessionHistory}" 
@@ -718,7 +719,7 @@
 
                     <StackPanel Visibility="{Binding IsWelcomeBackVisible, Converter={StaticResource BoolToVis}}" Margin="0,10,0,15">
                         <TextBlock Text="System Active &amp; Ready!" FontSize="20" FontWeight="Bold" Foreground="#4CAF50" TextAlignment="Center" Margin="0,0,0,5"/>
-                        <TextBlock Text="Asynchronous generation nodes are live and initialized." FontSize="14" Foreground="{DynamicResource ThemeMutedText}" TextAlignment="Center" Margin="0,0,0,10"/>
+                        <TextBlock Text="Everything is set up and ready to go" FontSize="14" Foreground="{DynamicResource ThemeMutedText}" TextAlignment="Center" Margin="0,0,0,10"/>
                         <Button Command="{Binding EditWelcomeProfileCommand}" Content="Edit Administrative Profile Properties" Style="{StaticResource ModernButtonStyle}" Background="Transparent" Foreground="#2196F3" Height="25" HorizontalAlignment="Center"/>
                     </StackPanel>
 
@@ -738,14 +739,14 @@
                         </StackPanel>
                         <StackPanel Grid.Column="2" Margin="5">
                             <TextBlock Text="🚀 Optimization" FontSize="16" FontWeight="Bold" Foreground="#FF9800" TextAlignment="Center" Margin="0,0,0,5"/>
-                            <TextBlock Text="Trigger ultra high speed multi-threaded class batch loops." Foreground="{DynamicResource ThemeText}" TextWrapping="Wrap" TextAlignment="Center" FontSize="12"/>
+                            <TextBlock Text="Generate reports for your whole class at once" Foreground="{DynamicResource ThemeText}" TextWrapping="Wrap" TextAlignment="Center" FontSize="12"/>
                         </StackPanel>
                     </Grid>
                     <Border Background="#FFF3E0" CornerRadius="8" Padding="12" Margin="0,0,0,20">
-                        <TextBlock Text="🔒 Secure Framework Assertion: No records leave host machine architecture partitions. All data rows are encrypted bound using local computer cryptography windows scope protections rules matrices layers structures." TextWrapping="Wrap" Foreground="#E65100" FontWeight="SemiBold" TextAlignment="Center" FontSize="11"/>
+                        <TextBlock Text="🔒 Secure Framework Assertion: No records leave host machine architecture partitions. All data is stored securely on your device — nothing is sent to external servers" TextWrapping="Wrap" Foreground="#E65100" FontWeight="SemiBold" TextAlignment="Center" FontSize="11"/>
                     </Border>
                     <Grid>
-                        <Button Command="{Binding EnterAppCommand}" Content="Initialize Core Workspace Panel" Height="45" Width="360" FontSize="15" Style="{StaticResource ModernPrimaryButtonStyle}" HorizontalAlignment="Center"/>
+                        <Button Command="{Binding EnterAppCommand}" Content="Get Started" Height="45" Width="360" FontSize="15" Style="{StaticResource ModernPrimaryButtonStyle}" HorizontalAlignment="Center"/>
                     </Grid>
                 </StackPanel>
             </Border>
