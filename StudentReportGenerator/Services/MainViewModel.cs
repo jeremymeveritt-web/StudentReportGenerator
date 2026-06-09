@@ -277,11 +277,19 @@ namespace StudentReportGenerator.Services
 
         private async Task PreviewToneAsync()
         {
-            if (SelectedFramework == null) { MessageBox.Show("Please select a tone framework first."); return; }
+            if (SelectedFramework == null)
+            {
+                MessageBox.Show("Please select a Tone Template first.", "Template Required", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             string notes = $"Generate a 2-sentence preview showing this tone. Subject: {SanitizeControlOutput(SelectedCurriculumTopic)}";
-            IsCompareRightVisible = true;
+
             StatusText = "Previewing Tone...";
-            await ProcessSingleReportExecutionAsync("Student Preview", notes, _appState.CurrentSettings.AiProvider, report => CompareOutputRight = report);
+            await ProcessSingleReportExecutionAsync("Student Preview", notes, _appState.CurrentSettings.AiProvider, report =>
+            {
+                MessageBox.Show(report, $"Tone Preview: {SelectedFramework.Name}", MessageBoxButton.OK, MessageBoxImage.Information);
+            });
         }
 
         private void DeleteHistoryRecord(object? parameter)
