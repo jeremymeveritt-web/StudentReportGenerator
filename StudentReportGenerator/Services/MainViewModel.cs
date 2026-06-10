@@ -56,6 +56,8 @@ namespace StudentReportGenerator.Services
         // Batch Mode Form State
         private string _batchDataInput = string.Empty;
         private bool _isBatchModeActive = false;
+        private string _selectedPronouns = "They/Them";
+        public string SelectedPronouns { get => _selectedPronouns; set => SetProperty(ref _selectedPronouns, value); }
 
         // Compare Suite Form State
         private string _compareStudentName = string.Empty;
@@ -220,6 +222,7 @@ namespace StudentReportGenerator.Services
             var request = new ReportRequest
             {
                 StudentName = name,
+                Pronouns = SelectedPronouns,
                 Subject = SanitizeControlOutput(SelectedCurriculumTopic),
                 WordCount = TargetWordCount,
                 RawNotes = notes,
