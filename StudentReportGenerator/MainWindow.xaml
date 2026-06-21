@@ -167,7 +167,13 @@
                                     <ColumnDefinition Width="1.5*"/>
                                     <ColumnDefinition Width="8"/>
                                     <ColumnDefinition Width="1.5*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="1.5*"/>
                                 </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Target Grade:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                    <TextBox Text="{Binding TargetGrade, UpdateSourceTrigger=PropertyChanged}" Height="35" Padding="8" FontSize="13"/>
+                                </StackPanel>
                                 <StackPanel Grid.Column="2">
                                     <TextBlock Text="Pronouns:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                                     <ComboBox Text="{Binding SelectedPronouns}" IsEditable="True" Height="35" Padding="5" FontSize="13">
@@ -176,15 +182,11 @@
                                         <ComboBoxItem Content="They/Them"/>
                                     </ComboBox>
                                 </StackPanel>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="Target Grade:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                                    <TextBox Text="{Binding TargetGrade, UpdateSourceTrigger=PropertyChanged}" Height="35" Padding="8" FontSize="13"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="2">
+                                <StackPanel Grid.Column="4">
                                     <TextBlock Text="Support Needs:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                                     <TextBox Text="{Binding SupportNeeds, UpdateSourceTrigger=PropertyChanged}" Height="35" Padding="8" FontSize="13"/>
                                 </StackPanel>
-                                <StackPanel Grid.Column="4">
+                                <StackPanel Grid.Column="6">
                                     <TextBlock Text="Parent Email:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                                     <TextBox Text="{Binding ParentEmail, UpdateSourceTrigger=PropertyChanged}" Height="35" Padding="8" FontSize="13"/>
                                 </StackPanel>
@@ -203,16 +205,8 @@
                                 </Grid.ColumnDefinitions>
 
                                 <StackPanel Orientation="Vertical" Margin="0,0,0,15">
-                                    <TextBlock Text="TARGET WORD COUNT:" 
-               FontSize="11" 
-               FontWeight="Bold" 
-               Foreground="{Binding SettingsVM.NavBarBackground}" 
-               Margin="0,0,0,5"/>
-                                    <ComboBox SelectedValue="{Binding TargetWordCount, Mode=TwoWay}" 
-              SelectedValuePath="Tag" 
-              Height="35" 
-              Padding="5" 
-              FontSize="13">
+                                    <TextBlock Text="TARGET WORD COUNT:" FontSize="11" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,0,0,5"/>
+                                    <ComboBox SelectedValue="{Binding TargetWordCount, Mode=TwoWay}" SelectedValuePath="Tag" Height="35" Padding="5" FontSize="13">
                                         <ComboBoxItem Content="~300 Words" Tag="300"/>
                                         <ComboBoxItem Content="~500 Words" Tag="500"/>
                                         <ComboBoxItem Content="~800 Words" Tag="800"/>
@@ -289,6 +283,27 @@
                         </StackPanel.Style>
                         <TextBlock Text="BATCH PROCESSING" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,5"/>
                         <TextBlock Text="Upload class list CSV files (Format: Name | Notes) to generate multi-student reports." Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" FontSize="13" Margin="0,0,0,20"/>
+
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="15"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Vertical">
+                                <TextBlock Text="BATCH TARGET WORD COUNT:" FontSize="11" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,0,0,5"/>
+                                <ComboBox SelectedValue="{Binding TargetWordCount, Mode=TwoWay}" SelectedValuePath="Tag" Height="35" Padding="5" FontSize="13">
+                                    <ComboBoxItem Content="~300 Words" Tag="300"/>
+                                    <ComboBoxItem Content="~500 Words" Tag="500"/>
+                                    <ComboBoxItem Content="~800 Words" Tag="800"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Vertical">
+                                <TextBlock Text="BATCH TONE TEMPLATE:" FontSize="11" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,0,0,5"/>
+                                <ComboBox ItemsSource="{Binding CustomFrameworks}" SelectedItem="{Binding SelectedFramework}" DisplayMemberPath="Name" Height="35" Padding="5" FontSize="13"/>
+                            </StackPanel>
+                        </Grid>
+
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -314,7 +329,11 @@
                                 <Button Command="{Binding GenerateBatchCommand}" Content="Process Entire Class" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Visibility="{Binding IsBatchModeActive, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"/>
                                 <Button Command="{Binding CancelBatchCommand}" Content="🛑 Stop Generation" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FFF44336" Visibility="{Binding IsBatchModeActive, Converter={StaticResource BoolToVis}}"/>
                             </Grid>
-                            <Button Command="{Binding ExportBatchWordCommand}" Grid.Column="2" Content="Export Batch (.docx)" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FF1976D2" />
+
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Command="{Binding CopyBatchCommand}" Content="📋 Copy All Text" Height="45" Style="{StaticResource ModernButtonStyle}" Width="130" Margin="0,0,10,0" />
+                                <Button Command="{Binding ExportBatchWordCommand}" Content="Export Batch (.docx)" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FF1976D2" Width="140" />
+                            </StackPanel>
                         </Grid>
                     </StackPanel>
 
@@ -329,8 +348,29 @@
                                 </Style.Triggers>
                             </Style>
                         </StackPanel.Style>
-                        <TextBlock Text="MODEL LAB COMPARISON" FontWeight="Bold" Foreground="#9C27B0" Margin="0,10,0,5"/>
+                        <TextBlock Text="MODEL LAB COMPARISON" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,5"/>
                         <TextBlock Text="Compare how two different AI models write the same report." Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" FontSize="13" Margin="0,0,0,20"/>
+
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="15"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Vertical">
+                                <TextBlock Text="COMPARE TARGET WORD COUNT:" FontSize="11" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,0,0,5"/>
+                                <ComboBox SelectedValue="{Binding TargetWordCount, Mode=TwoWay}" SelectedValuePath="Tag" Height="35" Padding="5" FontSize="13">
+                                    <ComboBoxItem Content="~300 Words" Tag="300"/>
+                                    <ComboBoxItem Content="~500 Words" Tag="500"/>
+                                    <ComboBoxItem Content="~800 Words" Tag="800"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Vertical">
+                                <TextBlock Text="COMPARE TONE TEMPLATE:" FontSize="11" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,0,0,5"/>
+                                <ComboBox ItemsSource="{Binding CustomFrameworks}" SelectedItem="{Binding SelectedFramework}" DisplayMemberPath="Name" Height="35" Padding="5" FontSize="13"/>
+                            </StackPanel>
+                        </Grid>
+
                         <TextBlock Text="Student Name:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding CompareStudentName, UpdateSourceTrigger=PropertyChanged}" Height="35" Margin="0,0,0,20" Padding="8" FontSize="13"/>
                         <TextBlock Text="Evaluation Notes:" FontWeight="SemiBold" Margin="0,0,0,5"/>
@@ -664,11 +704,13 @@
                 <StackPanel Grid.Row="0" Margin="0,0,0,15">
                     <Grid>
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="HISTORY LOG" FontWeight="Bold" FontSize="16" Foreground="{Binding SettingsVM.NavBarBackground}" VerticalAlignment="Center"/>
-                        <Button Command="{Binding ShowAllHistoryCommand}" Grid.Column="1" Content="Clear Filter" Style="{StaticResource ModernButtonStyle}" Height="25" Padding="10,0" />
+                        <TextBlock Text="HISTORY LOG" FontWeight="Bold" FontSize="16" Foreground="{Binding SettingsVM.NavBarBackground}" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                        <TextBox Grid.Column="1" Text="{Binding HistorySearchText, UpdateSourceTrigger=PropertyChanged}" Height="30" Padding="8,4" FontSize="13" ToolTip="Search by student name or keywords..." Margin="0,0,10,0"/>
+                        <Button Command="{Binding ShowAllHistoryCommand}" Grid.Column="2" Content="Clear Filter" Style="{StaticResource ModernButtonStyle}" Height="30" Padding="10,0" />
                     </Grid>
                     <TextBlock Text="past reports." FontSize="12" Margin="0,4,0,10" Foreground="{DynamicResource ThemeMutedText}"/>
                 </StackPanel>

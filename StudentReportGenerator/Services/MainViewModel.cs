@@ -31,6 +31,7 @@ namespace StudentReportGenerator.Services
         private string _statusText = "Ready.";
         private bool _isGenerating = false;
         private SessionRecord? _selectedHistoryItem;
+        private Guid _lastGeneratedRecordId;
 
         // Form Fields (Single Report)
         private string _selectedStudentName = string.Empty;
@@ -38,7 +39,7 @@ namespace StudentReportGenerator.Services
         private string _targetGrade = string.Empty;
         private string _supportNeeds = string.Empty;
         private string _parentEmail = string.Empty;
-        private int _targetWordCount = 150;
+        private int _targetWordCount = 300;
         private ReportFramework? _selectedFramework;
         private string _selectedCurriculumTopic = string.Empty;
         private string _customNotes = string.Empty;
@@ -104,6 +105,7 @@ namespace StudentReportGenerator.Services
         public ICommand CompareHistoryCommand { get; }
         public ICommand DeleteHistoryCommand { get; }
         public ICommand ClearBatchCommand { get; }
+        public ICommand CopyBatchCommand { get; }
 
         public MainViewModel(AppStateService appState, SettingsViewModel settingsVM, ReportOrchestratorService orchestrator)
         {
@@ -111,8 +113,9 @@ namespace StudentReportGenerator.Services
             SettingsVM = settingsVM;
             _orchestrator = orchestrator;
 
-            UpdateHistoryEditCommand = new RelayCommand(_ => UpdateHistoryEdit(), _ => !string.IsNullOrWhiteSpace(GeneratedReportOutput)); ;
+            UpdateHistoryEditCommand = new AsyncRelayCommand(_ => UpdateHistoryEditAsync(), _ => !string.IsNullOrWhiteSpace(GeneratedReportOutput));
             ClearBatchCommand = new RelayCommand(_ => BatchDataInput = string.Empty);
+            CopyBatchCommand = new RelayCommand(_ => { if (!string.IsNullOrWhiteSpace(BatchDataInput)) { System.Windows.Clipboard.SetText(BatchDataInput); StatusText = "✅ Entire batch copied!"; } }); 
             GenerateSingleCommand = new AsyncRelayCommand(_ => GenerateSingleReportAsync(), _ => !IsGenerating);
             SaveStudentCommand = new RelayCommand(_ => SaveStudent());
             DeleteStudentCommand = new RelayCommand(_ => DeleteStudent());
@@ -231,6 +234,7 @@ namespace StudentReportGenerator.Services
                 TeacherSignoff = _appState.CurrentSettings.TeacherSignoff,
                 TargetGrade = dbTargetGrade,
                 SupportNeeds = dbSupportNeeds
+
             };
 
             try
@@ -238,27 +242,22 @@ namespace StudentReportGenerator.Services
                 var response = await _orchestrator.GenerateAsync(request, provider);
                 IsGenerating = false;
 
-                if (response.IsSuccess)
+                if (provider == _appState.CurrentSettings.AiProvider)
                 {
-                    onCompleteOutput(response.GeneratedReport);
-
-                    if (provider == _appState.CurrentSettings.AiProvider)
+                    var newRecord = new SessionRecord
                     {
-                        SessionHistory.Insert(0, new SessionRecord
-                        {
-                            StudentName = request.StudentName,
-                            GeneratedReport = response.GeneratedReport,
-                            Timestamp = DateTime.Now
-                        });
-                        HistoryDatabaseService.SaveHistory(SessionHistory);
-                    }
+                        StudentName = request.StudentName,
+                        GeneratedReport = response.GeneratedReport,
+                        Timestamp = DateTime.Now
+                    };
 
-                    UpdateDashboardMetricsDisplay();
-                    StatusText = "Ready.";
-                    return true;
+                    _lastGeneratedRecordId = newRecord.Id; 
+
+                    SessionHistory.Insert(0, newRecord);
+                    HistoryDatabaseService.SaveHistory(SessionHistory);
                 }
 
-                
+
                 onCompleteOutput("We ran into a slight issue connecting to the AI provider. This is usually temporary. Please wait a moment and try again.");
                 StatusText = "Service unavailable.";
                 return false;
@@ -298,10 +297,9 @@ namespace StudentReportGenerator.Services
             });
         }
 
-        private async void UpdateHistoryEdit()
+        private async Task UpdateHistoryEditAsync()
         {
-            
-            var record = SessionHistory.FirstOrDefault(x => x.StudentName.Equals(SelectedStudentName, StringComparison.OrdinalIgnoreCase));
+            var record = SessionHistory.FirstOrDefault(x => x.Id == _lastGeneratedRecordId);
             if (record != null)
             {
                 record.GeneratedReport = GeneratedReportOutput;
@@ -313,17 +311,20 @@ namespace StudentReportGenerator.Services
             }
         }
 
-        private void DeleteHistoryRecord(object parameter)
+        private void DeleteHistoryRecord(object? parameter)
         {
-            if (System.Windows.MessageBox.Show("Are you sure you want to delete this report from the history log?", "Confirm Deletion", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.Yes)
+            if (SelectedHistoryItem == null) return;
+
+            if (System.Windows.MessageBox.Show(
+                $"Are you sure you want to delete this report for {SelectedHistoryItem.StudentName}?",
+                "Confirm Deletion",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.Yes)
             {
-                var record = SessionHistory.FirstOrDefault(x => x.StudentName.Equals(SelectedStudentName, StringComparison.OrdinalIgnoreCase));
-                if (record != null)
-                {
-                    SessionHistory.Remove(record);
-                    HistoryDatabaseService.SaveHistory(SessionHistory);
-                    StatusText = "History record deleted successfully.";
-                }
+                SessionHistory.Remove(SelectedHistoryItem);
+                HistoryDatabaseService.SaveHistory(SessionHistory);
+                SelectedHistoryItem = null;
+                StatusText = "History record deleted.";
             }
         }
 
@@ -530,14 +531,19 @@ namespace StudentReportGenerator.Services
         private void EditWelcomeProfile() { IsWelcomeBackVisible = false; IsProfileSetupVisible = true; SelectedNavigationIndex = 3; }
         private async void CopyReportToClipboard()
         {
-            if (!string.IsNullOrWhiteSpace(GeneratedReportOutput))
+            try
             {
-                System.Windows.Clipboard.SetText(GeneratedReportOutput);
-
-                // UX POLISH: Flash the status and reset it
-                StatusText = "✅ Copied to clipboard!";
-                await Task.Delay(2000); // Wait 2 seconds
-                StatusText = "Ready.";
+                if (!string.IsNullOrWhiteSpace(GeneratedReportOutput))
+                {
+                    System.Windows.Clipboard.SetText(GeneratedReportOutput);
+                    StatusText = "✅ Copied to clipboard!";
+                    await Task.Delay(2000);
+                    StatusText = "Ready.";
+                }
+            }
+            catch
+            {
+                StatusText = "Could not access clipboard.";
             }
         }
         private void SaveAsWord() { var d = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (d.ShowDialog() == true) WordExportService.ExportSingle(d.FileName, SanitizeControlOutput(SelectedStudentName), GeneratedReportOutput); }
@@ -647,7 +653,7 @@ namespace StudentReportGenerator.Services
         public string GeminiCountDisplay { get => _geminiCountDisplay; set => SetProperty(ref _geminiCountDisplay, value); }
         public string OpenaiCountDisplay { get => _openaiCountDisplay; set => SetProperty(ref _openaiCountDisplay, value); }
         public string ClaudeCountDisplay { get => _claudeCountDisplay; set => SetProperty(ref _claudeCountDisplay, value); }
-        private string _historySearchText;
+        private string _historySearchText = string.Empty;
         public string HistorySearchText
         {
             get => _historySearchText;

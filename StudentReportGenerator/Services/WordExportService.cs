@@ -49,13 +49,19 @@ namespace StudentReportGenerator.Services
             foreach (var line in lines)
             {
                 Paragraph para = body.AppendChild(new Paragraph());
+
+                // ADDED: Paragraph properties with spacing
+                ParagraphProperties paraProps = new ParagraphProperties(
+                    new SpacingBetweenLines { After = "160", Line = "276", LineRule = LineSpacingRuleValues.Auto }
+                );
+                para.PrependChild(paraProps);
+
                 Run run = para.AppendChild(new Run());
-                run.AppendChild(new Text(line));
+                run.AppendChild(new Text(line) { Space = DocumentFormat.OpenXml.SpaceProcessingModeValues.Preserve });
 
                 if (isHeader)
                 {
-                    // Applies styling (Bold, Size 32 half-points = 16pt font)
-                    RunProperties runProps = new RunProperties(new Bold(), new FontSize() { Val = "32" });
+                    RunProperties runProps = new RunProperties(new Bold(), new FontSize { Val = "32" });
                     run.PrependChild(runProps);
                 }
             }
