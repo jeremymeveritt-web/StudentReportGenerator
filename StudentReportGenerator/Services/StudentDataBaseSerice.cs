@@ -11,7 +11,7 @@ namespace StudentReportGenerator.Services
     public static class StudentDatabaseService
     {
         private static readonly string FilePath = FileSandboxService.GetSafeFilePath("students_db.dat");
-        private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("FacultyFlow_Student_Secure_V1");
+        private static readonly byte[] Entropy = Encoding.UTF8.GetBytes(Environment.MachineName + "_History_Secure_V1");
 
         public static List<StudentProfile> LoadStudents()
         {

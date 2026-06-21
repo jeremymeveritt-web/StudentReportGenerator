@@ -14,6 +14,13 @@ namespace StudentReportGenerator.Services
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
+        protected string SanitizeControlOutput(string source)
+        {
+            if (string.IsNullOrWhiteSpace(source)) return string.Empty;
+            if (source.Contains("System.Windows.Controls.ComboBoxItem:"))
+                return source.Replace("System.Windows.Controls.ComboBoxItem:", "").Trim();
+            return source.Trim();
+        }
 
         protected bool SetProperty<T>(ref T storage, T value, [CallerMemberName] string? propertyName = null)
         {

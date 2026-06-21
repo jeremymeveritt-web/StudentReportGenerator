@@ -23,7 +23,11 @@ namespace StudentReportGenerator.Services
                 byte[] encryptedBytes = ProtectedData.Protect(plaintextBytes, Entropy, DataProtectionScope.CurrentUser);
                 File.WriteAllBytes(SettingsPath, encryptedBytes);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                
+                System.Windows.MessageBox.Show($"Failed to save settings to disk. Please ensure you have sufficient disk space and permissions. Error: {ex.Message}", "Save Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
         }
 
         public static AppSettings LoadSettings()

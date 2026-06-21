@@ -175,14 +175,6 @@ namespace StudentReportGenerator.Services
             ClaudeCountDisplay = _appState.CurrentSettings.ClaudeReportsCount.ToString("N0");
         }
 
-        private string SanitizeControlOutput(string source)
-        {
-            if (string.IsNullOrWhiteSpace(source)) return string.Empty;
-            if (source.Contains("System.Windows.Controls.ComboBoxItem:"))
-                return source.Replace("System.Windows.Controls.ComboBoxItem:", "").Trim();
-            return source.Trim();
-        }
-
         private async Task GenerateSingleReportAsync()
         {
             string cleanStudentName = SanitizeControlOutput(SelectedStudentName);
