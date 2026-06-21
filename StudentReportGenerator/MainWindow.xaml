@@ -113,7 +113,7 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Margin="0,0,0,15">
-                    <TextBlock x:Name="lblActiveModule" Text="MENU SELECT:" FontWeight="Bold" Foreground="#FF9C27B0" Margin="0,0,0,5" FontSize="11"/>
+                    <TextBlock x:Name="lblActiveModule" Text="MENU SELECT:" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,0,0,5" FontSize="11"/>
                     <ComboBox SelectedIndex="{Binding SelectedNavigationIndex}" Height="40" FontSize="14" FontWeight="SemiBold" Padding="10,8">
                         <ComboBoxItem Content="📝 Single Report Generator"/>
                         <ComboBoxItem Content="📚 Batch Mode Processing"/>
@@ -206,7 +206,7 @@
                                     <TextBlock Text="TARGET WORD COUNT:" 
                FontSize="11" 
                FontWeight="Bold" 
-               Foreground="#7B1FA2" 
+               Foreground="{Binding SettingsVM.NavBarBackground}" 
                Margin="0,0,0,5"/>
                                     <ComboBox SelectedValue="{Binding TargetWordCount, Mode=TwoWay}" 
               SelectedValuePath="Tag" 
@@ -233,7 +233,7 @@
 
                             <Border Background="{DynamicResource ThemePreviewBg}" CornerRadius="8" Padding="15" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" Margin="0,0,0,15">
                                 <StackPanel>
-                                    <TextBlock Text="REPORT ATTRIBUTES" FontWeight="Bold" Foreground="#4CAF50" Margin="0,0,0,10"/>
+                                    <TextBlock Text="REPORT ATTRIBUTES" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,0,0,10"/>
                                     <TextBlock Text="Curriculum Topic:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                                     <Grid Margin="0,0,0,20">
                                         <Grid.ColumnDefinitions>
@@ -287,7 +287,7 @@
                                 </Style.Triggers>
                             </Style>
                         </StackPanel.Style>
-                        <TextBlock Text="BATCH PROCESSING" FontWeight="Bold" Foreground="#FFFF5722" Margin="0,10,0,5"/>
+                        <TextBlock Text="BATCH PROCESSING" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,5"/>
                         <TextBlock Text="Upload class list CSV files (Format: Name | Notes) to generate multi-student reports." Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" FontSize="13" Margin="0,0,0,20"/>
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -311,7 +311,7 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <Grid Grid.Column="0">
-                                <Button Command="{Binding GenerateBatchCommand}" Content="Process Entire Class" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FF00BCD4" Visibility="{Binding IsBatchModeActive, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"/>
+                                <Button Command="{Binding GenerateBatchCommand}" Content="Process Entire Class" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Visibility="{Binding IsBatchModeActive, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"/>
                                 <Button Command="{Binding CancelBatchCommand}" Content="🛑 Stop Generation" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FFF44336" Visibility="{Binding IsBatchModeActive, Converter={StaticResource BoolToVis}}"/>
                             </Grid>
                             <Button Command="{Binding ExportBatchWordCommand}" Grid.Column="2" Content="Export Batch (.docx)" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FF1976D2" />
@@ -362,7 +362,7 @@
                                 </ComboBox>
                             </StackPanel>
                         </Grid>
-                        <Button Command="{Binding RunComparisonCommand}" Content="Run Comparative Analytics" Height="50" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FF9C27B0" />
+                        <Button Command="{Binding RunComparisonCommand}" Content="Run Comparative Analytics" Height="50" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}"  />
                     </StackPanel>
 
                     <Grid>
@@ -531,7 +531,7 @@
                                 <TextBox Text="{Binding SettingsVM.SettingsNewFrameworkInstruction, UpdateSourceTrigger=PropertyChanged}" SpellCheck.IsEnabled="True" TextWrapping="Wrap" AcceptsReturn="True" Height="70" Padding="8" Margin="0,0,0,10" FontSize="13"/>
                                 <Button Command="{Binding SettingsVM.AddFrameworkCommand}" Content="Add Blueprint Template" Style="{StaticResource ModernButtonStyle}" Height="35" Margin="0,0,0,25"/>
 
-                                <Button Command="{Binding SettingsVM.SaveProfileSettingsCommand}" Content="Save AI Configurations" Height="45" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FF2196F3" />
+                                <Button Command="{Binding SettingsVM.SaveProfileSettingsCommand}" Content="Save AI Configurations" Height="45" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}" />
                             </StackPanel>
                         </ScrollViewer>
                     </Grid>
@@ -548,7 +548,7 @@
                             </Style>
                         </ScrollViewer.Style>
                         <StackPanel Margin="0,0,10,10">
-                            <TextBlock Text="LIFETIME PERFORMANCE METRICS ROI" FontWeight="Bold" Foreground="#3F51B5" Margin="0,10,0,10"/>
+                            <TextBlock Text="LIFETIME PERFORMANCE METRICS ROI" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,10"/>
                             <TextBlock Text="Labor metrics reflected reduction in administrative load hours saved through automated generation systems." Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" FontSize="13" Margin="0,0,0,15"/>
                             <Grid Margin="0,0,0,20">
                                 <Grid.ColumnDefinitions>
@@ -557,18 +557,18 @@
                                 </Grid.ColumnDefinitions>
                                 <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Background="#E8EAF6" Margin="0,0,5,0">
                                     <StackPanel>
-                                        <TextBlock Text="Saved Labor Hours" FontSize="14" FontWeight="SemiBold" Foreground="#3F51B5"/>
-                                        <TextBlock Text="{Binding HoursSavedDisplay}" FontSize="32" FontWeight="Bold" Foreground="#303F9F" Margin="0,5,0,0"/>
+                                        <TextBlock Text="Saved Labor Hours" FontSize="14" FontWeight="SemiBold" Foreground="{Binding SettingsVM.NavBarBackground}"/>
+                                        <TextBlock Text="{Binding HoursSavedDisplay}" FontSize="32" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,5,0,0"/>
                                     </StackPanel>
                                 </Border>
                                 <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Background="#E8F5E9" Margin="5,0,0,0">
                                     <StackPanel>
-                                        <TextBlock Text="Estimated Token Output" FontSize="14" FontWeight="SemiBold" Foreground="#2E7D32"/>
-                                        <TextBlock Text="{Binding TokensUsedDisplay}" FontSize="32" FontWeight="Bold" Foreground="#1B5E20" Margin="0,5,0,0"/>
+                                        <TextBlock Text="Estimated Token Output" FontSize="14" FontWeight="SemiBold" Foreground="{Binding SettingsVM.NavBarBackground}"/>
+                                        <TextBlock Text="{Binding TokensUsedDisplay}" FontSize="32" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,5,0,0"/>
                                     </StackPanel>
                                 </Border>
                             </Grid>
-                            <TextBlock Text="HISTORICAL RECORD ENGINE VOLUME RECORDS" FontWeight="Bold" Foreground="#009688" Margin="0,10,0,10"/>
+                            <TextBlock Text="HISTORICAL RECORD ENGINE VOLUME RECORDS" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,10"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -616,9 +616,9 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Margin="0,0,0,15">
-                    <TextBlock Text="REPORT PREVIEW" FontWeight="Bold" FontSize="16" Foreground="#FF00BCD4"/>
+                    <TextBlock Text="REPORT PREVIEW" FontWeight="Bold" FontSize="16" Foreground="{Binding SettingsVM.NavBarBackground}"/>
                     <TextBlock Text="{Binding StatusText}" FontSize="12" Margin="0,4,0,0" Foreground="{DynamicResource ThemeMutedText}"/>
-                    <ProgressBar Height="4" IsIndeterminate="True" Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVis}}" Margin="0,10,0,0" Foreground="#FF00BCD4" Background="Transparent" BorderThickness="0"/>
+                    <ProgressBar Height="4" IsIndeterminate="True" Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVis}}" Margin="0,10,0,0" Foreground="{Binding SettingsVM.NavBarBackground}" Background="Transparent" BorderThickness="0"/>
                 </StackPanel>
 
                 <Grid Grid.Row="1" Margin="0,0,0,15">
@@ -667,7 +667,7 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="HISTORY LOG" FontWeight="Bold" FontSize="16" Foreground="#FF9C27B0" VerticalAlignment="Center"/>
+                        <TextBlock Text="HISTORY LOG" FontWeight="Bold" FontSize="16" Foreground="{Binding SettingsVM.NavBarBackground}" VerticalAlignment="Center"/>
                         <Button Command="{Binding ShowAllHistoryCommand}" Grid.Column="1" Content="Clear Filter" Style="{StaticResource ModernButtonStyle}" Height="25" Padding="10,0" />
                     </Grid>
                     <TextBlock Text="past reports." FontSize="12" Margin="0,4,0,10" Foreground="{DynamicResource ThemeMutedText}"/>
@@ -730,7 +730,7 @@
                     <StackPanel Visibility="{Binding IsWelcomeBackVisible, Converter={StaticResource BoolToVis}}" Margin="0,10,0,15">
                         <TextBlock Text="System Active &amp; Ready!" FontSize="20" FontWeight="Bold" Foreground="#4CAF50" TextAlignment="Center" Margin="0,0,0,5"/>
                         <TextBlock Text="Everything is set up and ready to go" FontSize="14" Foreground="{DynamicResource ThemeMutedText}" TextAlignment="Center" Margin="0,0,0,10"/>
-                        <Button Command="{Binding EditWelcomeProfileCommand}" Content="Edit Administrative Profile Properties" Style="{StaticResource ModernButtonStyle}" Background="Transparent" Foreground="#2196F3" Height="25" HorizontalAlignment="Center"/>
+                        <Button Command="{Binding EditWelcomeProfileCommand}" Content="Edit Administrative Profile Properties" Style="{StaticResource ModernButtonStyle}" Background="Transparent" Foreground="{Binding SettingsVM.NavBarBackground}" Height="25" HorizontalAlignment="Center"/>
                     </StackPanel>
 
                     <Grid Margin="0,5,0,15">
