@@ -56,6 +56,8 @@ namespace StudentReportGenerator.Services
             AddFrameworkCommand = new RelayCommand(_ => AddCustomFrameworkTemplate());
             TestApiCommand = new RelayCommand(_ => TestApiKey());
 
+
+
             InitializeSettings();
         }
         private void TestApiKey()
@@ -346,23 +348,31 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        private bool _isDarkMode;
         public bool IsDarkMode
         {
-            get => _appState.CurrentSettings.IsDarkMode;
+            get => _isDarkMode;
             set
             {
-                if (_appState.CurrentSettings.IsDarkMode != value)
+                if (SetProperty(ref _isDarkMode, value))
                 {
-                    _appState.CurrentSettings.IsDarkMode = value;
-                    OnPropertyChanged();
-                    var win = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault();
-                    if (win != null)
-                    {
-                        var method = win.GetType().GetMethod("ApplyDarkMode", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                        method?.Invoke(win, new object[] { value });
-                    }
-                    _appState.SaveSettings();
+                    ApplyTheme(value); 
                 }
+            }
+        }
+
+        private void ApplyTheme(bool isDark)
+        {
+            // Persist selection and save settings. Do not assume more behavior here.
+            try
+            {
+                // Replace IsDarkModeSetting with the actual property name on your settings model if different.
+                _appState.CurrentSettings.IsDarkMode = isDark;
+                _appState.SaveSettings();
+            }
+            catch
+            {
+                // swallow or log as appropriate
             }
         }
     }
