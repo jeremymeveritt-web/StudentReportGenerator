@@ -60,8 +60,10 @@ namespace StudentReportGenerator.Services
 
             InitializeSettings();
         }
-        private void TestApiKey()
+        private async void TestApiKey()
         {
+            FlushCurrentApiKey(); 
+
             string encryptedKey = string.Empty;
             if (SelectedAiProvider.Contains("NVIDIA")) encryptedKey = _appState.CurrentSettings.NvidiaApiKey;
             else if (SelectedAiProvider.Contains("Gemini")) encryptedKey = _appState.CurrentSettings.GeminiApiKey;
@@ -69,13 +71,37 @@ namespace StudentReportGenerator.Services
             else if (SelectedAiProvider.Contains("Claude")) encryptedKey = _appState.CurrentSettings.ClaudeApiKey;
 
             string key = CryptoService.DecryptSecret(encryptedKey);
-            if (string.IsNullOrWhiteSpace(key) || key.Length < 15)
+            if (string.IsNullOrWhiteSpace(key) || key.Length < 10)
             {
-                System.Windows.MessageBox.Show("Invalid or empty API Key. Please enter a valid key first.", "Connection Failed", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                System.Windows.MessageBox.Show("No API key entered. Please paste your key first.", "No Key Found", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                 return;
             }
 
-            System.Windows.MessageBox.Show($"✅ Key format is valid and securely encrypted in the Windows DPAPI vault for {SelectedAiProvider}. You are ready to generate reports!", "Connection Status", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            System.Windows.MessageBox.Show("Testing connection to provider — please wait...", "Connecting", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+
+            try
+            {
+                using var client = new System.Net.Http.HttpClient();
+                client.DefaultRequestHeaders.Add("Authorization", $"Bearer {key}");
+
+                
+                string testUrl = "https://api.openai.com/v1/models"; 
+                if (SelectedAiProvider.Contains("NVIDIA")) testUrl = "https://integrate.api.nvidia.com/v1/models";
+                else if (SelectedAiProvider.Contains("Claude")) { testUrl = "https://api.anthropic.com/v1/messages"; client.DefaultRequestHeaders.Add("x-api-key", key); client.DefaultRequestHeaders.Remove("Authorization"); }
+                else if (SelectedAiProvider.Contains("Gemini")) testUrl = $"https://generativelanguage.googleapis.com/v1beta/models?key={key}";
+
+                var response = await client.GetAsync(testUrl);
+
+               
+                if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                    System.Windows.MessageBox.Show("Connection successful! Your API key is working correctly.", "Connected ✅", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                else
+                    System.Windows.MessageBox.Show($"Connection failed (Error {(int)response.StatusCode}). Check your key.", "Key Invalid ❌", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Network error: {ex.Message}", "Test Failed", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
         }
 
         private void InitializeSettings()
@@ -115,10 +141,7 @@ namespace StudentReportGenerator.Services
             string plainApiKey = ConvertToPlainString(_dynamicSecureApiKey);
             string provider = _appState.CurrentSettings.AiProvider;
 
-            if (provider.Contains("NVIDIA")) _appState.CurrentSettings.NvidiaApiKey = CryptoService.EncryptSecret(plainApiKey);
-            else if (provider.Contains("Gemini")) _appState.CurrentSettings.GeminiApiKey = CryptoService.EncryptSecret(plainApiKey);
-            else if (provider.Contains("OpenAI")) _appState.CurrentSettings.OpenAiApiKey = CryptoService.EncryptSecret(plainApiKey);
-            else if (provider.Contains("Claude")) _appState.CurrentSettings.ClaudeApiKey = CryptoService.EncryptSecret(plainApiKey);
+            FlushCurrentApiKey();
 
             _appState.SaveSettings();
             ApplyBrandingConfiguration();
@@ -145,9 +168,24 @@ namespace StudentReportGenerator.Services
                 SettingsUnlockPassword = string.Empty;
             }
         }
+        private void FlushCurrentApiKey()
+        {
+            if (string.IsNullOrEmpty(_appState.CurrentSettings.AiProvider)) return;
+
+            string plainApiKey = ConvertToPlainString(_dynamicSecureApiKey);
+            string currentProvider = _appState.CurrentSettings.AiProvider;
+
+            if (currentProvider.Contains("NVIDIA")) _appState.CurrentSettings.NvidiaApiKey = CryptoService.EncryptSecret(plainApiKey);
+            else if (currentProvider.Contains("Gemini")) _appState.CurrentSettings.GeminiApiKey = CryptoService.EncryptSecret(plainApiKey);
+            else if (currentProvider.Contains("OpenAI")) _appState.CurrentSettings.OpenAiApiKey = CryptoService.EncryptSecret(plainApiKey);
+            else if (currentProvider.Contains("Claude")) _appState.CurrentSettings.ClaudeApiKey = CryptoService.EncryptSecret(plainApiKey);
+
+            _appState.SaveSettings();
+        }
 
         private void EvaluateAiProviderOptions(string provider)
         {
+            FlushCurrentApiKey();
             string cleanProvider = SanitizeControlOutput(provider);
             ModelTierOptions.Clear();
             if (cleanProvider.Contains("NVIDIA"))
@@ -180,8 +218,8 @@ namespace StudentReportGenerator.Services
             {
                 DynamicApiKeyLabel = "Claude Key:";
                 _dynamicSecureApiKey = ConvertToSecureString(CryptoService.DecryptSecret(_appState.CurrentSettings.ClaudeApiKey));
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Claude 3 Haiku", Tag = "claude-3-haiku-20240307" });
-                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Claude 3.5 Sonnet", Tag = "claude-3-5-sonnet-20240620" });
+                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Claude Haiku 4.5 (Fast)", Tag = "claude-haiku-4-5-20251001" });
+                ModelTierOptions.Add(new ComboBoxItemWrapper { Content = "Claude Sonnet 4.6 (Balanced)", Tag = "claude-sonnet-4-6" });
                 SelectedModelTier = _appState.CurrentSettings.ClaudeModelTier;
             }
         }
@@ -363,16 +401,26 @@ namespace StudentReportGenerator.Services
 
         private void ApplyTheme(bool isDark)
         {
-            // Persist selection and save settings. Do not assume more behavior here.
-            try
+            var res = System.Windows.Application.Current.Resources;
+            if (isDark)
             {
-                // Replace IsDarkModeSetting with the actual property name on your settings model if different.
-                _appState.CurrentSettings.IsDarkMode = isDark;
-                _appState.SaveSettings();
+                res["ThemeAppBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF121212"));
+                res["ThemeCardBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF1E1E1E"));
+                res["ThemeText"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFE0E0E0"));
+                res["ThemeMutedText"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFAAAAAA"));
+                res["ThemeBorder"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF333333"));
+                res["ThemeInputBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF2D2D2D"));
+                res["ThemePreviewBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF252525"));
             }
-            catch
+            else
             {
-                // swallow or log as appropriate
+                res["ThemeAppBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFFAFAFA"));
+                res["ThemeCardBg"] = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.White);
+                res["ThemeText"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF333333"));
+                res["ThemeMutedText"] = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Gray);
+                res["ThemeBorder"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFDDDDDD"));
+                res["ThemeInputBg"] = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.White);
+                res["ThemePreviewBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFF9F9F9"));
             }
         }
     }
