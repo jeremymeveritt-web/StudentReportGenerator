@@ -313,13 +313,17 @@ namespace StudentReportGenerator.Services
             }
         }
 
-        private void DeleteHistoryRecord(object? parameter)
+        private void DeleteHistoryRecord(object parameter)
         {
-            if (parameter is SessionRecord record && SessionHistory.Contains(record))
+            if (System.Windows.MessageBox.Show("Are you sure you want to delete this report from the history log?", "Confirm Deletion", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.Yes)
             {
-                SessionHistory.Remove(record);
-                HistoryDatabaseService.SaveHistory(SessionHistory);
-                StatusText = "History record deleted successfully.";
+                var record = SessionHistory.FirstOrDefault(x => x.StudentName.Equals(SelectedStudentName, StringComparison.OrdinalIgnoreCase));
+                if (record != null)
+                {
+                    SessionHistory.Remove(record);
+                    HistoryDatabaseService.SaveHistory(SessionHistory);
+                    StatusText = "History record deleted successfully.";
+                }
             }
         }
 
@@ -505,7 +509,23 @@ namespace StudentReportGenerator.Services
         }
 
         private void SaveStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match == null) { _studentDatabase.Add(new StudentProfile { FullName = clean, ClassName = StudentClass, ParentEmail = ParentEmail, TargetGrade = TargetGrade, SupportNeeds = SupportNeeds }); } else { match.ClassName = StudentClass; match.ParentEmail = ParentEmail; match.TargetGrade = TargetGrade; match.SupportNeeds = SupportNeeds; } StudentDatabaseService.SaveStudents(_studentDatabase); RefreshCollections(); StatusText = "Profile saved."; }
-        private void DeleteStudent() { string clean = SanitizeControlOutput(SelectedStudentName); var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match != null) { _studentDatabase.Remove(match); StudentDatabaseService.SaveStudents(_studentDatabase); StudentClass = ParentEmail = TargetGrade = SupportNeeds = string.Empty; SelectedStudentName = string.Empty; RefreshCollections(); StatusText = "Record dropped."; } }
+        private void DeleteStudent()
+        {
+            if (string.IsNullOrWhiteSpace(SelectedStudentName)) return;
+
+            if (System.Windows.MessageBox.Show($"Are you sure you want to permanently delete {SelectedStudentName}'s profile?", "Confirm Deletion", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.Yes)
+            {
+                var match = _studentDatabase.FirstOrDefault(x => x.FullName == SelectedStudentName);
+                if (match != null)
+                {
+                    _studentDatabase.Remove(match);
+                    StudentDatabaseService.SaveStudents(_studentDatabase); // FIXED: Called SaveStudents!
+                    StatusText = "Student profile deleted.";
+                    SelectedStudentName = string.Empty;
+                    RefreshCollections();
+                }
+            }
+        }
         private void EnterApplication() { IsWelcomeOverlayVisible = false; }
         private void EditWelcomeProfile() { IsWelcomeBackVisible = false; IsProfileSetupVisible = true; SelectedNavigationIndex = 3; }
         private async void CopyReportToClipboard()
@@ -535,7 +555,36 @@ namespace StudentReportGenerator.Services
         public List<string> CurriculumTopics => _appState.CurrentSettings.CurriculumTopics;
 
         public SessionRecord? SelectedHistoryItem { get => _selectedHistoryItem; set => SetProperty(ref _selectedHistoryItem, value); }
-        public int SelectedNavigationIndex { get => _selectedNavigationIndex; set { if (SetProperty(ref _selectedNavigationIndex, value)) { if (_selectedNavigationIndex < 3 && !string.IsNullOrEmpty(_appState.CurrentSettings.MasterPassword)) { SettingsVM.IsSettingsUnlocked = false; } } } }
+        public int SelectedNavigationIndex
+        {
+            get => _selectedNavigationIndex;
+            set
+            {
+      
+                if (_selectedNavigationIndex == 0 && value != 0 && !string.IsNullOrWhiteSpace(CustomNotes))
+                {
+                    var result = System.Windows.MessageBox.Show(
+                        "You have unsaved Teacher Observations. Are you sure you want to leave this tab? Your notes will be lost.",
+                        "Unsaved Changes",
+                        System.Windows.MessageBoxButton.YesNo,
+                        System.Windows.MessageBoxImage.Warning);
+
+                    if (result == System.Windows.MessageBoxResult.No)
+                    {
+                        return; // Cancel the navigation!
+                    }
+                }
+
+                if (SetProperty(ref _selectedNavigationIndex, value))
+                {
+                    // Clean up the notes if they safely navigated away
+                    if (_selectedNavigationIndex != 0)
+                    {
+                        CustomNotes = string.Empty;
+                    }
+                }
+            }
+        }
         public string SelectedStudentName
         {
             get => _selectedStudentName;
@@ -598,5 +647,18 @@ namespace StudentReportGenerator.Services
         public string GeminiCountDisplay { get => _geminiCountDisplay; set => SetProperty(ref _geminiCountDisplay, value); }
         public string OpenaiCountDisplay { get => _openaiCountDisplay; set => SetProperty(ref _openaiCountDisplay, value); }
         public string ClaudeCountDisplay { get => _claudeCountDisplay; set => SetProperty(ref _claudeCountDisplay, value); }
+        private string _historySearchText;
+        public string HistorySearchText
+        {
+            get => _historySearchText;
+            set
+            {
+                if (SetProperty(ref _historySearchText, value))
+                {
+                    
+                    System.Windows.Data.CollectionViewSource.GetDefaultView(SessionHistory).Refresh();
+                }
+            }
+        }
     }
 }

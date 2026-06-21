@@ -22,8 +22,6 @@ namespace StudentReportGenerator.Models
     public class ReportResponse
     {
         private string _generatedReport = string.Empty;
-
-        // Resolves Bug #6: Defensive coalescing pass ensures null is never passed to display tracking properties
         public string GeneratedReport
         {
             get => _generatedReport;
@@ -95,8 +93,6 @@ namespace StudentReportGenerator.Models
         public string SmtpServer { get; set; } = "smtp.gmail.com";
         public int SmtpPort { get; set; } = 587;
         public string SmtpEmail { get; set; } = string.Empty;
-
-        // Bug #2 Note: Persisted in DPAPI dat blob, but securely cleared from memory fields upon VM instantiation tracks
         public string SmtpPassword { get; set; } = string.Empty;
 
         public List<ReportFramework> CustomFrameworks { get; set; } = new List<ReportFramework>

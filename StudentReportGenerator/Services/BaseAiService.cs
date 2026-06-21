@@ -7,7 +7,6 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
-    // This abstract class implements IAiService and handles all the boilerplate!
     public abstract class BaseAiService : IAiService
     {
         protected readonly HttpClient _httpClient;
@@ -22,19 +21,15 @@ namespace StudentReportGenerator.Services
         public async Task<ReportResponse> GenerateReportAsync(ReportRequest request)
         {
             int maxRetries = 3;
-            int delayMs = 2000; 
+            int delayMs = 2000;
 
             for (int i = 0; i <= maxRetries; i++)
             {
                 try
                 {
-                    
                     var httpRequest = BuildRequest(request);
-
-                    
                     var response = await _httpClient.SendAsync(httpRequest);
 
-                    
                     if (response.IsSuccessStatusCode)
                     {
                         string responseBody = await response.Content.ReadAsStringAsync();
@@ -42,13 +37,14 @@ namespace StudentReportGenerator.Services
                         return new ReportResponse { IsSuccess = true, GeneratedReport = generatedText.Trim() };
                     }
 
-                    
+                    // Exponential Backoff for Rate Limits (HTTP 429)
                     if (response.StatusCode == (System.Net.HttpStatusCode)429 && i < maxRetries)
                     {
                         await Task.Delay(delayMs);
-                        delayMs *= 2; 
-                        continue;     
+                        delayMs *= 2;
+                        continue;
                     }
+
                     string errBody = await response.Content.ReadAsStringAsync();
                     return new ReportResponse { IsSuccess = false, ErrorMessage = $"API Error ({response.StatusCode}): {errBody}" };
                 }
@@ -65,7 +61,6 @@ namespace StudentReportGenerator.Services
             return new ReportResponse { IsSuccess = false, ErrorMessage = "API Error: Maximum retry attempts exceeded." };
         }
 
-        // Child classes MUST provide these two methods
         protected abstract HttpRequestMessage BuildRequest(ReportRequest request);
         protected abstract string ParseResponse(string responseBody);
     }
