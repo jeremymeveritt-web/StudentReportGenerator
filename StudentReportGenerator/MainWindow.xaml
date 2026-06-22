@@ -11,14 +11,6 @@
     <Window.Resources>
         <converters:InverseBoolToVisibilityConverter x:Key="BoolToVis" />
 
-        <SolidColorBrush x:Key="ThemeAppBg" Color="#FFFAFAFA"/>
-        <SolidColorBrush x:Key="ThemeCardBg" Color="White"/>
-        <SolidColorBrush x:Key="ThemeText" Color="#FF333333"/>
-        <SolidColorBrush x:Key="ThemeMutedText" Color="Gray"/>
-        <SolidColorBrush x:Key="ThemeBorder" Color="#FFDDDDDD"/>
-        <SolidColorBrush x:Key="ThemeInputBg" Color="White"/>
-        <SolidColorBrush x:Key="ThemePreviewBg" Color="#FFF9F9F9"/>
-
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="{DynamicResource ThemeInputBg}"/>
             <Setter Property="Foreground" Value="{DynamicResource ThemeText}"/>

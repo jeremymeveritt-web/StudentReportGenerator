@@ -234,21 +234,27 @@ namespace StudentReportGenerator.Services
                 var response = await _orchestrator.GenerateAsync(request, provider);
                 IsGenerating = false;
 
-                if (provider == _appState.CurrentSettings.AiProvider)
+                if (response.IsSuccess)
                 {
-                    var newRecord = new SessionRecord
+                    onCompleteOutput(response.GeneratedReport);
+
+                    if (provider == _appState.CurrentSettings.AiProvider)
                     {
-                        StudentName = request.StudentName,
-                        GeneratedReport = response.GeneratedReport,
-                        Timestamp = DateTime.Now
-                    };
+                        var newRecord = new SessionRecord
+                        {
+                            StudentName = request.StudentName,
+                            GeneratedReport = response.GeneratedReport,
+                            Timestamp = DateTime.Now
+                        };
+                        _lastGeneratedRecordId = newRecord.Id;
+                        SessionHistory.Insert(0, newRecord);
+                        HistoryDatabaseService.SaveHistory(SessionHistory);
+                    }
 
-                    _lastGeneratedRecordId = newRecord.Id; 
-
-                    SessionHistory.Insert(0, newRecord);
-                    HistoryDatabaseService.SaveHistory(SessionHistory);
+                    UpdateDashboardMetricsDisplay();
+                    StatusText = "Ready.";
+                    return true;
                 }
-
 
                 onCompleteOutput("We ran into a slight issue connecting to the AI provider. This is usually temporary. Please wait a moment and try again.");
                 StatusText = "Service unavailable.";
@@ -257,7 +263,6 @@ namespace StudentReportGenerator.Services
             catch (TaskCanceledException)
             {
                 IsGenerating = false;
-                
                 onCompleteOutput("The connection timed out. Please check your school's internet connection or firewall and try again.");
                 StatusText = "Connection timed out.";
                 return false;
@@ -265,8 +270,7 @@ namespace StudentReportGenerator.Services
             catch (Exception)
             {
                 IsGenerating = false;
-                
-                onCompleteOutput("An unexpected software error occurred while generating this report. If this persists, please restart FacultyFlow or contact IT support.");
+                onCompleteOutput("An unexpected software error occurred while generating this report. If this persists, please restart or contact IT support.");
                 StatusText = "Generation error.";
                 return false;
             }

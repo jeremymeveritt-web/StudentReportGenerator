@@ -25,8 +25,8 @@ namespace StudentReportGenerator.Services
             }
             catch (Exception ex)
             {
-                
-                System.Windows.MessageBox.Show($"Failed to save settings to disk. Please ensure you have sufficient disk space and permissions. Error: {ex.Message}", "Save Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+
+                System.Windows.MessageBox.Show($"Settings could not be saved. Check you have write access to the application folder.\nError: {ex.Message}", "Save Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             }
         }
 

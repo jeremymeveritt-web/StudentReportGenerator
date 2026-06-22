@@ -62,7 +62,7 @@ namespace StudentReportGenerator.Services
         }
         private async void TestApiKey()
         {
-            FlushCurrentApiKey(); 
+            FlushCurrentApiKey();
 
             string encryptedKey = string.Empty;
             if (SelectedAiProvider.Contains("NVIDIA")) encryptedKey = _appState.CurrentSettings.NvidiaApiKey;
@@ -84,16 +84,15 @@ namespace StudentReportGenerator.Services
                 using var client = new System.Net.Http.HttpClient();
                 client.DefaultRequestHeaders.Add("Authorization", $"Bearer {key}");
 
-                
-                string testUrl = "https://api.openai.com/v1/models"; 
+                string testUrl = "https://api.openai.com/v1/models";
                 if (SelectedAiProvider.Contains("NVIDIA")) testUrl = "https://integrate.api.nvidia.com/v1/models";
                 else if (SelectedAiProvider.Contains("Claude")) { testUrl = "https://api.anthropic.com/v1/messages"; client.DefaultRequestHeaders.Add("x-api-key", key); client.DefaultRequestHeaders.Remove("Authorization"); }
                 else if (SelectedAiProvider.Contains("Gemini")) testUrl = $"https://generativelanguage.googleapis.com/v1beta/models?key={key}";
 
                 var response = await client.GetAsync(testUrl);
 
-               
-                if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                // ADDED: MethodNotAllowed (405) for Claude
+                if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.BadRequest || response.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed)
                     System.Windows.MessageBox.Show("Connection successful! Your API key is working correctly.", "Connected ✅", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                 else
                     System.Windows.MessageBox.Show($"Connection failed (Error {(int)response.StatusCode}). Check your key.", "Key Invalid ❌", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
@@ -113,7 +112,11 @@ namespace StudentReportGenerator.Services
             SettingsSmtpEmail = settings.SmtpEmail;
             DisableMasterPassword = string.IsNullOrEmpty(settings.MasterPassword);
 
-            _settingsSmtpSecurePassword = ConvertToSecureString(CryptoService.DecryptSecret(settings.SmtpPassword));
+            if (!string.IsNullOrEmpty(settings.SmtpPassword))
+                _settingsSmtpSecurePassword = ConvertToSecureString(CryptoService.DecryptSecret(settings.SmtpPassword));
+
+            _isDarkMode = settings.IsDarkMode; 
+            ApplyTheme(_isDarkMode);           
 
             ApplyBrandingConfiguration();
             EvaluateAiProviderOptions(settings.AiProvider);
@@ -125,28 +128,15 @@ namespace StudentReportGenerator.Services
             _appState.CurrentSettings.TeacherSignoff = SettingsTeacherName;
             _appState.CurrentSettings.SmtpEmail = SettingsSmtpEmail;
 
-            _appState.CurrentSettings.SmtpPassword = CryptoService.EncryptSecret(ConvertToPlainString(_settingsSmtpSecurePassword));
+            string plainSmtp = ConvertToPlainString(_settingsSmtpSecurePassword);
+            _appState.CurrentSettings.SmtpPassword = CryptoService.EncryptSecret(plainSmtp);
 
-            if (DisableMasterPassword)
-            {
-                _appState.CurrentSettings.MasterPassword = string.Empty;
-                SettingsMasterPassword = string.Empty;
-            }
-            else if (!string.IsNullOrEmpty(SettingsMasterPassword))
-            {
-                _appState.CurrentSettings.MasterPassword = CryptoService.HashPassword(SettingsMasterPassword);
-            }
+            if (DisableMasterPassword) _appState.CurrentSettings.MasterPassword = string.Empty;
+            else if (!string.IsNullOrEmpty(SettingsUnlockPassword)) _appState.CurrentSettings.MasterPassword = CryptoService.EncryptSecret(SettingsUnlockPassword);
 
-            // Save the dynamic API key properly based on current provider
-            string plainApiKey = ConvertToPlainString(_dynamicSecureApiKey);
-            string provider = _appState.CurrentSettings.AiProvider;
+            FlushCurrentApiKey(); // Only this is needed!
 
-            FlushCurrentApiKey();
-
-            _appState.SaveSettings();
-            ApplyBrandingConfiguration();
-
-            MessageBox.Show("System configurations updated successfully.", "Settings Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show("Configuration updated successfully.", "Saved", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
         }
 
         private void UnlockSettings()
@@ -386,7 +376,9 @@ namespace StudentReportGenerator.Services
             {
                 if (SetProperty(ref _isDarkMode, value))
                 {
-                    ApplyTheme(value); 
+                    _appState.CurrentSettings.IsDarkMode = value;
+                    _appState.SaveSettings();
+                    ApplyTheme(value);
                 }
             }
         }
