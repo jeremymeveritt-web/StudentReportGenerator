@@ -4,12 +4,16 @@
         xmlns:services="clr-namespace:StudentReportGenerator.Services"
         xmlns:converters="clr-namespace:StudentReportGenerator.Converters"
         Title="AI Student Report Generator" Height="768" Width="1366"
+        Icon="/Assets/app.ico"
         MinWidth="1100" MinHeight="700"
         WindowStartupLocation="CenterScreen"
+        FontFamily="{DynamicResource AppFontFamily}"
+        FontSize="{DynamicResource AppFontSize}"
         Background="{DynamicResource ThemeAppBg}" Foreground="{DynamicResource ThemeText}">
 
     <Window.Resources>
         <converters:InverseBoolToVisibilityConverter x:Key="BoolToVis" />
+        <converters:BoolToGridLengthConverter x:Key="BoolToColWidth" />
 
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="{DynamicResource ThemeInputBg}"/>
@@ -27,6 +31,15 @@
             <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorder}"/>
         </Style>
 
+        <!-- Vector icon glyphs (Segoe Fluent on Win11, MDL2 fallback on Win10) replace raw emoji
+             for a consistent, high-DPI-safe look across Windows versions and locales -->
+        <Style x:Key="ButtonIconStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+
         <Style x:Key="ModernCardStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource ThemeCardBg}"/>
             <Setter Property="CornerRadius" Value="10"/>
@@ -36,15 +49,15 @@
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
         <Style x:Key="MetricCardStyle" TargetType="Border">
-            <Setter Property="Background" Value="#FFF5F5F5"/>
+            <Setter Property="Background" Value="{DynamicResource ThemeMetricCardBg}"/>
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="15"/>
             <Setter Property="Margin" Value="5"/>
         </Style>
 
         <Style TargetType="Button" x:Key="ModernButtonStyle">
-            <Setter Property="Background" Value="#FFEEEEEE"/>
-            <Setter Property="Foreground" Value="#FF333333"/>
+            <Setter Property="Background" Value="{DynamicResource ThemeButtonBg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource ThemeText}"/>
             <Setter Property="Height" Value="35"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -59,17 +72,17 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#FFDDDDDD"/>
+                    <Setter Property="Background" Value="{DynamicResource ThemeButtonHoverBg}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
         <Style x:Key="ModernPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernButtonStyle}">
-            <Setter Property="Background" Value="#FF4CAF50"/>
+            <Setter Property="Background" Value="{DynamicResource ThemePrimaryBtnBg}"/>
             <Setter Property="Foreground" Value="White"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#FF43A047"/>
+                    <Setter Property="Background" Value="{DynamicResource ThemePrimaryBtnHoverBg}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -79,11 +92,13 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="1.3*"/>
             <ColumnDefinition Width="1.6*"/>
-            <ColumnDefinition Width="1.0*"/>
+            <!-- Simple mode hides the history column so a teacher's first sessions face a calmer, two-panel layout -->
+            <ColumnDefinition Width="{Binding SettingsVM.IsSimpleMode, Converter={StaticResource BoolToColWidth}, ConverterParameter=1.0}"/>
         </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="60"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="28"/>
         </Grid.RowDefinitions>
 
         <Border x:Name="TopNavBar" Grid.Row="0" Grid.ColumnSpan="3" Background="{Binding SettingsVM.NavBarBackground}" Padding="20,0,20,0">
@@ -106,13 +121,43 @@
 
                 <StackPanel Grid.Row="0" Margin="0,0,0,15">
                     <TextBlock x:Name="lblActiveModule" Text="MENU SELECT:" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,0,0,5" FontSize="11"/>
-                    <ComboBox SelectedIndex="{Binding SelectedNavigationIndex}" Height="40" FontSize="14" FontWeight="SemiBold" Padding="10,8">
-                        <ComboBoxItem Content="📝 Single Report Generator"/>
-                        <ComboBoxItem Content="📚 Whole-Class Reports"/>
-                        <ComboBoxItem Content="⚖️ Compare AI Writing Styles"/>
-                        <ComboBoxItem Content="👤 My Profile &amp; School Settings"/>
-                        <ComboBoxItem Content="🧠 AI Provider &amp; API Keys"/>
-                        <ComboBoxItem Content="📊 Usage Statistics"/>
+                    <ComboBox SelectedIndex="{Binding SelectedNavigationIndex}" Height="40" FontSize="14" FontWeight="SemiBold" Padding="10,8" AutomationProperties.Name="Menu Select">
+                        <ComboBoxItem AutomationProperties.Name="Single Report Generator">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE70F;"/>
+                                <TextBlock Text="Single Report Generator"/>
+                            </StackPanel>
+                        </ComboBoxItem>
+                        <ComboBoxItem AutomationProperties.Name="Whole-Class Reports">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE8F1;"/>
+                                <TextBlock Text="Whole-Class Reports"/>
+                            </StackPanel>
+                        </ComboBoxItem>
+                        <ComboBoxItem AutomationProperties.Name="Compare AI Writing Styles">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE8AB;"/>
+                                <TextBlock Text="Compare AI Writing Styles"/>
+                            </StackPanel>
+                        </ComboBoxItem>
+                        <ComboBoxItem AutomationProperties.Name="My Profile and School Settings">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE77B;"/>
+                                <TextBlock Text="My Profile &amp; School Settings"/>
+                            </StackPanel>
+                        </ComboBoxItem>
+                        <ComboBoxItem AutomationProperties.Name="AI Provider and API Keys">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE8D7;"/>
+                                <TextBlock Text="AI Provider &amp; API Keys"/>
+                            </StackPanel>
+                        </ComboBoxItem>
+                        <ComboBoxItem AutomationProperties.Name="Usage Statistics">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE9D9;"/>
+                                <TextBlock Text="Usage Statistics"/>
+                            </StackPanel>
+                        </ComboBoxItem>
                     </ComboBox>
                     <Rectangle Height="1" Fill="{DynamicResource ThemeBorder}" Margin="0,15,0,0"/>
                 </StackPanel>
@@ -149,7 +194,7 @@
                                 <ComboBox Text="{Binding SelectedStudentName, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding StudentNames}" IsEditable="True" Height="35" Padding="5" Margin="0,0,8,0" FontSize="13" />
                                 <TextBox Text="{Binding StudentClass, UpdateSourceTrigger=PropertyChanged}" Grid.Column="1" Height="35" Padding="8" FontSize="13" Margin="0,0,8,0"/>
                                 <Button Command="{Binding SaveStudentCommand}" Grid.Column="2" Content="Save" Style="{StaticResource ModernButtonStyle}" Width="Auto" Padding="12,0" Height="35" Margin="0,0,5,0"/>
-                                <Button Command="{Binding DeleteStudentCommand}" Grid.Column="3" Content="Delete" Style="{StaticResource ModernButtonStyle}" Background="#FFFFEBEE" Foreground="#FFD32F2F" Width="Auto" Padding="12,0" Height="35"/>
+                                <Button Command="{Binding DeleteStudentCommand}" Grid.Column="3" Content="Delete" Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeDangerBg}" Foreground="{DynamicResource ThemeDangerText}" Width="Auto" Padding="12,0" Height="35"/>
                             </Grid>
 
                             <Grid Margin="0,0,0,15">
@@ -185,8 +230,18 @@
                             </Grid>
 
                             <WrapPanel Margin="0,0,0,20">
-                                <Button Command="{Binding ImportRosterCommand}" Content="📁 Import Roster" Style="{StaticResource ModernButtonStyle}" Background="#FFE0F7FA" Foreground="#FF0097A7" Height="30" Margin="0,0,8,5" />
-                                <Button Command="{Binding ViewStudentHistoryCommand}" Content="🕒 View History" Style="{StaticResource ModernButtonStyle}" Background="#FFF3E0" Foreground="#FFE65100" Height="30" Margin="0,0,0,5" />
+                                <Button Command="{Binding ImportRosterCommand}" AutomationProperties.Name="Import Roster" Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeInfoBg}" Foreground="{DynamicResource ThemeInfoText}" Height="30" Margin="0,0,8,5">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE8B5;"/>
+                                        <TextBlock Text="Import Roster"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding ViewStudentHistoryCommand}" AutomationProperties.Name="View History" Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeWarningBg}" Foreground="{DynamicResource ThemeWarningText}" Height="30" Margin="0,0,0,5">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE81C;"/>
+                                        <TextBlock Text="View History"/>
+                                    </StackPanel>
+                                </Button>
                             </WrapPanel>
 
                             <Grid Margin="0,0,0,20">
@@ -229,7 +284,7 @@
                                         </Grid.ColumnDefinitions>
                                         <ComboBox Text="{Binding SelectedCurriculumTopic, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding CurriculumTopics}" IsEditable="True" Height="35" Padding="5" Margin="0,0,8,0" FontSize="13"/>
                                         <Button Command="{Binding SaveCurriculumCommand}" Grid.Column="1" Content="Save" Style="{StaticResource ModernButtonStyle}" Width="Auto" Padding="15,0" Height="35" Margin="0,0,5,0"/>
-                                        <Button Command="{Binding DeleteCurriculumCommand}" Grid.Column="2" Content="Delete" Style="{StaticResource ModernButtonStyle}" Background="#FFFFEBEE" Foreground="#FFD32F2F" Width="Auto" Padding="12,0" Height="35" />
+                                        <Button Command="{Binding DeleteCurriculumCommand}" Grid.Column="2" Content="Delete" Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeDangerBg}" Foreground="{DynamicResource ThemeDangerText}" Width="Auto" Padding="12,0" Height="35" />
                                     </Grid>
 
                                     <Grid Margin="0,0,0,15">
@@ -252,10 +307,76 @@
                                         </StackPanel>
                                     </Grid>
 
-                                    <TextBlock Text="Teacher Observations (Optional):" FontWeight="SemiBold" Margin="0,10,0,5"/>
+                                    <Grid Margin="0,10,0,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Teacher Observations (Optional):" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Command="{Binding DictateCommand}" AutomationProperties.Name="Dictate observations"
+                                                Style="{StaticResource ModernButtonStyle}" Height="26" Padding="8,0"
+                                                ToolTip="Dictate your observations using your microphone (processed entirely on this computer)">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE720;"/>
+                                                <TextBlock>
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Text" Value="Dictate"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsDictating}" Value="True">
+                                                                    <Setter Property="Text" Value="Stop"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
                                     <Grid Height="80">
                                         <TextBox Text="{Binding CustomNotes, UpdateSourceTrigger=PropertyChanged}" SpellCheck.IsEnabled="True" TextWrapping="Wrap" AcceptsReturn="True" Padding="8" FontSize="13"/>
                                     </Grid>
+
+                                    <Expander Header="Comment Bank — reusable phrases" Margin="0,10,0,0" FontSize="12">
+                                        <StackPanel Margin="0,8,0,0">
+                                            <TextBox Text="{Binding CommentFilterText, UpdateSourceTrigger=PropertyChanged}" Height="28" Padding="6,4" FontSize="12" ToolTip="Type to filter your saved phrases..."/>
+                                            <ListBox ItemsSource="{Binding VisibleCommentBank}" MaxHeight="110" FontSize="12" Margin="0,6,0,6" BorderThickness="1">
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                            <Button Grid.Column="1" Content="Insert" FontSize="10" Padding="6,1" Margin="6,0,0,0"
+                                                                    Command="{Binding DataContext.InsertPhraseCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                    CommandParameter="{Binding}"/>
+                                                            <Button Grid.Column="2" Content="✕" FontSize="10" Padding="5,1" Margin="4,0,0,0" AutomationProperties.Name="Delete phrase"
+                                                                    Command="{Binding DataContext.DeletePhraseCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                    CommandParameter="{Binding}"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox Text="{Binding NewPhraseText, UpdateSourceTrigger=PropertyChanged}" Height="28" Padding="6,4" FontSize="12" Margin="0,0,6,0" ToolTip="Add a new phrase to your bank..."/>
+                                                <Button Grid.Column="1" Command="{Binding AddPhraseCommand}" Content="Save Phrase" Style="{StaticResource ModernButtonStyle}" Height="28" Padding="10,0" FontSize="11"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <Expander Header="Previous report for this student" Margin="0,6,0,0" FontSize="12"
+                                              Visibility="{Binding HasLastTermReport, Converter={StaticResource BoolToVis}}">
+                                        <TextBox Text="{Binding LastTermReportPreview, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="140"
+                                                 VerticalScrollBarVisibility="Auto" FontSize="12" Padding="8" Margin="0,8,0,0"
+                                                 Background="{DynamicResource ThemePreviewBg}"/>
+                                    </Expander>
                                 </StackPanel>
                             </Border>
                             <Button Command="{Binding GenerateSingleCommand}" Content="Generate Report" Height="45" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}" Margin="0,5,0,0"/>
@@ -296,6 +417,26 @@
                             </StackPanel>
                         </Grid>
 
+                        <!-- Rapid-fire entry: one student at a time, Enter/Next to advance — no
+                             hand-formatting of pipe-delimited lines needed -->
+                        <Expander Header="⚡ Rapid entry (one student at a time)" FontSize="12" Margin="0,0,0,10">
+                            <Border Background="{DynamicResource ThemePreviewBg}" CornerRadius="6" Padding="10" Margin="0,6,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding RapidProgressDisplay}" FontSize="11" Foreground="{DynamicResource ThemeMutedText}" Margin="0,0,0,4"/>
+                                    <TextBlock Text="{Binding RapidCurrentName}" FontWeight="Bold" FontSize="14" Margin="0,0,0,6"/>
+                                    <TextBox Text="{Binding RapidNotes, UpdateSourceTrigger=PropertyChanged}" Height="50" TextWrapping="Wrap" AcceptsReturn="False" Padding="6" FontSize="12" Margin="0,0,0,6">
+                                        <TextBox.InputBindings>
+                                            <KeyBinding Key="Return" Command="{Binding RapidNextCommand}"/>
+                                        </TextBox.InputBindings>
+                                    </TextBox>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Command="{Binding RapidNextCommand}" Content="Add &amp; Next (Enter)" Style="{StaticResource ModernPrimaryButtonStyle}" Height="28" Padding="10,0" FontSize="11" Margin="0,0,8,0"/>
+                                        <Button Command="{Binding RapidSkipCommand}" Content="Skip Student" Style="{StaticResource ModernButtonStyle}" Height="28" Padding="10,0" FontSize="11"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Expander>
+
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -304,9 +445,14 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Batch Roster Data:" FontWeight="SemiBold" VerticalAlignment="Bottom"/>
 
-                            <Button Command="{Binding ClearBatchCommand}" Grid.Column="1" Content="🗑️ Clear Batch" Style="{StaticResource ModernButtonStyle}" Background="#FFFFEBEE" Foreground="#FFD32F2F" Width="105" Height="30" Margin="0,0,10,0"/>
+                            <Button Command="{Binding ClearBatchCommand}" Grid.Column="1" AutomationProperties.Name="Clear Batch" Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeDangerBg}" Foreground="{DynamicResource ThemeDangerText}" Width="105" Height="30" Margin="0,0,10,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE74D;"/>
+                                    <TextBlock Text="Clear Batch"/>
+                                </StackPanel>
+                            </Button>
 
-                            <Button Command="{Binding ImportBatchCsvCommand}" Grid.Column="2" Content="Upload CSV List" Style="{StaticResource ModernButtonStyle}" Background="#FFE0F7FA" Foreground="#FF0097A7" Width="130" Height="30" />
+                            <Button Command="{Binding ImportBatchCsvCommand}" Grid.Column="2" Content="Upload CSV List" Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeInfoBg}" Foreground="{DynamicResource ThemeInfoText}" Width="130" Height="30" />
                         </Grid>
                         <Grid Height="280">
                             <TextBox Text="{Binding BatchDataInput, UpdateSourceTrigger=PropertyChanged}" SpellCheck.IsEnabled="True" TextWrapping="Wrap" AcceptsReturn="True" Margin="0,0,0,15" Padding="10" VerticalScrollBarVisibility="Auto" FontSize="13"/>
@@ -319,13 +465,40 @@
                             </Grid.ColumnDefinitions>
                             <Grid Grid.Column="0">
                                 <Button Command="{Binding GenerateBatchCommand}" Content="Process Entire Class" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Visibility="{Binding IsBatchModeActive, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"/>
-                                <Button Command="{Binding CancelBatchCommand}" Content="🛑 Stop Generation" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FFF44336" Visibility="{Binding IsBatchModeActive, Converter={StaticResource BoolToVis}}"/>
+                                <Button Command="{Binding CancelBatchCommand}" AutomationProperties.Name="Stop Generation" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Background="{DynamicResource ThemeDangerStrongBg}" Visibility="{Binding IsBatchModeActive, Converter={StaticResource BoolToVis}}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE71A;"/>
+                                        <TextBlock Text="Stop Generation"/>
+                                    </StackPanel>
+                                </Button>
                             </Grid>
 
                             <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button Command="{Binding CopyBatchCommand}" Content="📋 Copy All Text" Height="45" Style="{StaticResource ModernButtonStyle}" Width="130" Margin="0,0,10,0" />
-                                <Button Command="{Binding ExportBatchWordCommand}" Content="Export Batch (.docx)" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FF1976D2" Width="140" />
+                                <Button Command="{Binding CopyBatchCommand}" AutomationProperties.Name="Copy All Text" Height="45" Style="{StaticResource ModernButtonStyle}" Width="130" Margin="0,0,10,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE8C8;"/>
+                                        <TextBlock Text="Copy All Text"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding ExportBatchWordCommand}" Content="Export Batch (.docx)" Height="45" Style="{StaticResource ModernPrimaryButtonStyle}" Background="{DynamicResource ThemeAccentBlueBg}" Width="140" />
                             </StackPanel>
+                        </Grid>
+
+                        <Button Command="{Binding AuditToneCommand}" Style="{StaticResource ModernButtonStyle}" Height="30" Margin="0,0,0,8"
+                                ToolTip="Optional fairness check: asks the AI to flag systematic tone differences between students in the generated batch">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE9D5;"/>
+                                <TextBlock Text="Audit Tone Balance (optional)"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Grid Visibility="{Binding HasQueuedReports, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding QueuedCountDisplay}" FontSize="11" Foreground="{DynamicResource ThemeWarningText}" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Command="{Binding RetryQueuedCommand}" Content="Retry Now" Style="{StaticResource ModernButtonStyle}" Height="24" Padding="8,0" FontSize="10"/>
                         </Grid>
                     </StackPanel>
 
@@ -377,7 +550,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0">
                                 <TextBlock Text="AI Provider 1:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                                <ComboBox Text="{Binding CompareProvider1}" Height="35" Padding="5" FontSize="13">
+                                <ComboBox SelectedValue="{Binding CompareProvider1, Mode=TwoWay}" SelectedValuePath="Content" Height="35" Padding="5" FontSize="13">
                                     <ComboBoxItem Content="Google Gemini"/>
                                     <ComboBoxItem Content="ChatGPT (OpenAI)"/>
                                     <ComboBoxItem Content="Claude (Anthropic)"/>
@@ -386,7 +559,7 @@
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Text="AI Provider 2:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                                <ComboBox Text="{Binding CompareProvider2}" Height="35" Padding="5" FontSize="13">
+                                <ComboBox SelectedValue="{Binding CompareProvider2, Mode=TwoWay}" SelectedValuePath="Content" Height="35" Padding="5" FontSize="13">
                                     <ComboBoxItem Content="Google Gemini"/>
                                     <ComboBoxItem Content="ChatGPT (OpenAI)"/>
                                     <ComboBoxItem Content="Claude (Anthropic)"/>
@@ -411,7 +584,14 @@
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel Margin="0,0,10,10">
                                 <TextBlock Text="PROFILE &amp; BRANDING" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,0,0,10"/>
-                                <CheckBox IsChecked="{Binding SettingsVM.IsDarkMode}" Content="Enable Dark Mode Theme" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,15" />
+                                <CheckBox IsChecked="{Binding SettingsVM.IsDarkMode}" Content="Enable Dark Mode Theme" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8" />
+                                <CheckBox IsChecked="{Binding SettingsVM.IsDyslexiaFriendlyFont}" Content="Dyslexia-friendly font" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8" />
+                                <CheckBox IsChecked="{Binding SettingsVM.IsSimpleMode}" Content="Simple mode (hide the History panel for a calmer layout)" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8" />
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                                    <TextBlock Text="Text size:" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <Slider Value="{Binding SettingsVM.UiTextScale}" Minimum="0.85" Maximum="1.4" Width="180" TickFrequency="0.05" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                            AutomationProperties.Name="Interface text size"/>
+                                </StackPanel>
                                 <Grid Margin="0,0,0,15">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -465,9 +645,34 @@
                                         <PasswordBox x:Name="pbSmtpPassword" Height="35" Padding="8" PasswordChanged="PbSmtpPassword_PasswordChanged"/>
                                     </StackPanel>
                                 </Grid>
-                                <TextBlock Text="*IT Warning: Standard passwords will fail. Google Workspace and Microsoft 365 require generating an OAuth 'App Password' for SMTP access." FontStyle="Italic" Foreground="#D32F2F" FontSize="11" Margin="0,0,0,25" TextWrapping="Wrap"/>
+                                <TextBlock Text="*IT Warning: Standard passwords will fail. Google Workspace and Microsoft 365 require generating an OAuth 'App Password' for SMTP access." FontStyle="Italic" Foreground="{DynamicResource ThemeDangerText}" FontSize="11" Margin="0,0,0,25" TextWrapping="Wrap"/>
 
-                                <TextBlock Text="ADMIN PASSWORD PROTECTION" FontWeight="Bold" Foreground="#F44336" Margin="0,10,0,10"/>
+                                <TextBlock Text="TRUST &amp; DISCLOSURE" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,10"/>
+                                <CheckBox IsChecked="{Binding SettingsVM.AppendAiDisclosure}" Content="Add an AI-assistance disclosure line to exported and emailed reports" FontSize="13" Margin="0,0,0,8"/>
+                                <CheckBox IsChecked="{Binding SettingsVM.EnableSafeguardingPrompt}" Content="Remind me to use the school's safeguarding process if my notes look like a disclosure" FontSize="13" Margin="0,0,0,20"/>
+
+                                <TextBlock Text="SCHOOL DATA CONNECTION (IT / DATA MANAGER)" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,5"/>
+                                <TextBlock Text="School-level configuration, not personal settings. Choose what verified data (if any) may be included in AI prompts — each category is off until your school's data lead opts in."
+                                           FontSize="11" Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <TextBlock Text="School data provider:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                <ComboBox SelectedValue="{Binding SettingsVM.SelectedSchoolDataProvider, Mode=TwoWay}" ItemsSource="{Binding SettingsVM.SchoolDataProviderOptions}" Height="35" Margin="0,0,0,10"
+                                          AutomationProperties.Name="School data provider"/>
+                                <CheckBox IsChecked="{Binding SettingsVM.IncludeAttendanceInPrompts}" Content="Include attendance in AI prompts" FontSize="13" Margin="0,0,0,6"/>
+                                <CheckBox IsChecked="{Binding SettingsVM.IncludeBehaviourInPrompts}" Content="Include behaviour points in AI prompts" FontSize="13" Margin="0,0,0,6"/>
+                                <CheckBox IsChecked="{Binding SettingsVM.IncludeGradesInPrompts}" Content="Include recent assessment grades in AI prompts" FontSize="13" Margin="0,0,0,6"/>
+                                <CheckBox IsChecked="{Binding SettingsVM.IncludeSupportPlanInPrompts}" Content="Include SEN / support summary in AI prompts (special category data)" FontSize="13" Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding SettingsVM.LastSisSyncDisplay}" FontSize="11" Foreground="{DynamicResource ThemeMutedText}" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Command="{Binding SettingsVM.SyncNowCommand}" Content="Sync Now" Style="{StaticResource ModernButtonStyle}" Height="28" Padding="10,0" FontSize="11" Margin="0,0,6,0"/>
+                                    <Button Grid.Column="2" Command="{Binding SettingsVM.PurgeSisCacheCommand}" Content="Purge Cached Data" Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeDangerBg}" Foreground="{DynamicResource ThemeDangerText}" Height="28" Padding="10,0" FontSize="11"/>
+                                </Grid>
+
+                                <TextBlock Text="ADMIN PASSWORD PROTECTION" FontWeight="Bold" Foreground="{DynamicResource ThemeDangerText}" Margin="0,10,0,10"/>
                                 <TextBlock Text="Master Settings Password:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                                 <PasswordBox x:Name="pbMasterPassword" Height="35" Padding="8" Margin="0,0,0,10" PasswordChanged="PbMasterPassword_PasswordChanged">
                                     <PasswordBox.Style>
@@ -487,7 +692,7 @@
 
                                 <CheckBox Content="Disable password protection (removes master lock)" 
                                           IsChecked="{Binding SettingsVM.DisableMasterPassword}" 
-                                          FontWeight="SemiBold" Foreground="#F44336" Margin="0,0,0,25"/>
+                                          FontWeight="SemiBold" Foreground="{DynamicResource ThemeDangerText}" Margin="0,0,0,25"/>
 
                                 <Button Command="{Binding SettingsVM.SaveProfileSettingsCommand}" Content="Save System Configurations" Height="45" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}" />
 
@@ -498,7 +703,10 @@
                         </ScrollViewer>
                         <Border Background="{DynamicResource ThemeAppBg}" Visibility="{Binding SettingsVM.IsSettingsUnlocked, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}" Panel.ZIndex="10">
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20">
-                                <TextBlock Text="🔒 Settings Vault Locked" FontWeight="Bold" FontSize="20" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
+                                    <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE72E;" FontSize="20" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Settings Vault Locked" FontWeight="Bold" FontSize="20"/>
+                                </StackPanel>
                                 <TextBlock Text="Enter your password to access settings." Foreground="{DynamicResource ThemeMutedText}" HorizontalAlignment="Center" Margin="0,0,0,20"/>
                                 <PasswordBox x:Name="pbUnlockPassword" Height="40" Width="280" Padding="8" Margin="0,0,0,20" PasswordChanged="PbUnlockPassword_PasswordChanged"/>
                                 <Button Command="{Binding SettingsVM.UnlockSettingsCommand}" Content="Unlock Settings" Height="45" Width="280" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}" />
@@ -528,7 +736,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
                                         <TextBlock Text="Active Core Provider:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                                        <ComboBox SelectedValue="{Binding SettingsVM.SelectedAiProvider, Mode=TwoWay}" Height="35">
+                                        <ComboBox SelectedValue="{Binding SettingsVM.SelectedAiProvider, Mode=TwoWay}" SelectedValuePath="Content" Height="35">
                                             <ComboBoxItem Content="NVIDIA NIM (Free)"/>
                                             <ComboBoxItem Content="Google Gemini"/>
                                             <ComboBoxItem Content="ChatGPT (OpenAI)"/>
@@ -547,7 +755,7 @@
                                     </StackPanel>
                                 </Grid>
                                 <TextBlock Text="API Key:" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                                <Grid Margin="0,0,0,25">
+                                <Grid Margin="0,0,0,5">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="100"/>
                                         <ColumnDefinition Width="*"/>
@@ -557,13 +765,29 @@
                                     <PasswordBox x:Name="pbApiKey" Grid.Column="1" Height="35" Padding="8" Margin="0,0,10,0" PasswordChanged="PbApiKey_PasswordChanged"/>
                                     <Button Command="{Binding SettingsVM.TestApiCommand}" Grid.Column="2" Content="Test Connection" Style="{StaticResource ModernButtonStyle}" Width="120" Height="35"/>
                                 </Grid>
+                                <Grid Margin="0,0,0,25">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ProgressBar Width="80" Height="4" IsIndeterminate="True" VerticalAlignment="Center" Margin="0,0,10,0" Background="Transparent" BorderThickness="0"
+                                                 Foreground="{Binding SettingsVM.NavBarBackground}"
+                                                 Visibility="{Binding SettingsVM.IsTestingConnection, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding SettingsVM.ApiTestStatus}" FontSize="12" Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                </Grid>
 
                                 <TextBlock Text="CUSTOM WRITING STYLES" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,10"/>
                                 <TextBlock Text="Style Name (e.g. SEN Friendly):" FontWeight="SemiBold" Margin="0,0,0,5"/>
                                 <TextBox Text="{Binding SettingsVM.SettingsNewFrameworkName, UpdateSourceTrigger=PropertyChanged}" Height="35" Padding="8" Margin="0,0,0,15" FontSize="13"/>
                                 <TextBlock Text="Instructions for this writing style:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                                 <TextBox Text="{Binding SettingsVM.SettingsNewFrameworkInstruction, UpdateSourceTrigger=PropertyChanged}" SpellCheck.IsEnabled="True" TextWrapping="Wrap" AcceptsReturn="True" Height="70" Padding="8" Margin="0,0,0,10" FontSize="13"/>
-                                <Button Command="{Binding SettingsVM.AddFrameworkCommand}" Content="Add Writing Style" Style="{StaticResource ModernButtonStyle}" Height="35" Margin="0,0,0,25"/>
+                                <Button Command="{Binding SettingsVM.AddFrameworkCommand}" Content="Add Writing Style" Style="{StaticResource ModernButtonStyle}" Height="35" Margin="0,0,0,10"/>
+
+                                <TextBlock Text="Department library — a Head of Department can export the approved styles and topics once, and every teacher imports the same file:" FontSize="11" Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,25">
+                                    <Button Command="{Binding SettingsVM.ExportLibraryCommand}" Content="Export Shared Library" Style="{StaticResource ModernButtonStyle}" Height="30" Padding="10,0" Margin="0,0,8,0"/>
+                                    <Button Command="{Binding SettingsVM.ImportLibraryCommand}" Content="Import Shared Library" Style="{StaticResource ModernButtonStyle}" Height="30" Padding="10,0"/>
+                                </StackPanel>
 
                                 <Button Command="{Binding SettingsVM.SaveProfileSettingsCommand}" Content="Save AI Configurations" Height="45" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}" />
                             </StackPanel>
@@ -589,13 +813,13 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Background="#E8EAF6" Margin="0,0,5,0">
+                                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Background="{DynamicResource ThemeMetricIndigoBg}" Margin="0,0,5,0">
                                     <StackPanel>
                                         <TextBlock Text="Saved Labor Hours" FontSize="14" FontWeight="SemiBold" Foreground="{Binding SettingsVM.NavBarBackground}"/>
                                         <TextBlock Text="{Binding HoursSavedDisplay}" FontSize="32" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,5,0,0"/>
                                     </StackPanel>
                                 </Border>
-                                <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Background="#E8F5E9" Margin="5,0,0,0">
+                                <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Background="{DynamicResource ThemeSuccessBg}" Margin="5,0,0,0">
                                     <StackPanel>
                                         <TextBlock Text="Estimated Token Output" FontSize="14" FontWeight="SemiBold" Foreground="{Binding SettingsVM.NavBarBackground}"/>
                                         <TextBlock Text="{Binding TokensUsedDisplay}" FontSize="32" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,5,0,0"/>
@@ -610,31 +834,52 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Background="#E1F5FE">
+                                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Background="{DynamicResource ThemeMetricNvidiaBg}">
                                     <StackPanel>
-                                        <TextBlock Text="NVIDIA" FontSize="11" Foreground="#0277BD"/>
-                                        <TextBlock Text="{Binding NvidiaCountDisplay}" FontSize="20" FontWeight="Bold" Foreground="#01579B"/>
+                                        <TextBlock Text="NVIDIA" FontSize="11" Foreground="{DynamicResource ThemeMetricNvidiaText}"/>
+                                        <TextBlock Text="{Binding NvidiaCountDisplay}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource ThemeMetricNvidiaText}"/>
                                     </StackPanel>
                                 </Border>
-                                <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Background="#E0F7FA">
+                                <Border Grid.Column="1" Style="{StaticResource MetricCardStyle}" Background="{DynamicResource ThemeMetricGeminiBg}">
                                     <StackPanel>
-                                        <TextBlock Text="Gemini" FontSize="11" Foreground="#00838F"/>
-                                        <TextBlock Text="{Binding GeminiCountDisplay}" FontSize="20" FontWeight="Bold" Foreground="#006064"/>
+                                        <TextBlock Text="Gemini" FontSize="11" Foreground="{DynamicResource ThemeMetricGeminiText}"/>
+                                        <TextBlock Text="{Binding GeminiCountDisplay}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource ThemeMetricGeminiText}"/>
                                     </StackPanel>
                                 </Border>
-                                <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Background="#F3E5F5">
+                                <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Background="{DynamicResource ThemeMetricOpenAiBg}">
                                     <StackPanel>
-                                        <TextBlock Text="OpenAI" FontSize="11" Foreground="#6A1B9A"/>
-                                        <TextBlock Text="{Binding OpenaiCountDisplay}" FontSize="20" FontWeight="Bold" Foreground="#4A148C"/>
+                                        <TextBlock Text="OpenAI" FontSize="11" Foreground="{DynamicResource ThemeMetricOpenAiText}"/>
+                                        <TextBlock Text="{Binding OpenaiCountDisplay}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource ThemeMetricOpenAiText}"/>
                                     </StackPanel>
                                 </Border>
-                                <Border Grid.Column="3" Style="{StaticResource MetricCardStyle}" Background="#FFF3E0">
+                                <Border Grid.Column="3" Style="{StaticResource MetricCardStyle}" Background="{DynamicResource ThemeMetricClaudeBg}">
                                     <StackPanel>
-                                        <TextBlock Text="Claude" FontSize="11" Foreground="#EF6C00"/>
-                                        <TextBlock Text="{Binding ClaudeCountDisplay}" FontSize="20" FontWeight="Bold" Foreground="#E65100"/>
+                                        <TextBlock Text="Claude" FontSize="11" Foreground="{DynamicResource ThemeMetricClaudeText}"/>
+                                        <TextBlock Text="{Binding ClaudeCountDisplay}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource ThemeMetricClaudeText}"/>
                                     </StackPanel>
                                 </Border>
                             </Grid>
+
+                            <TextBlock Text="RUNNING COST (FOR THE BUDGET HOLDER)" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,25,0,10"/>
+                            <Border Background="{DynamicResource ThemePreviewBg}" CornerRadius="8" Padding="12" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" Margin="0,0,0,10">
+                                <TextBlock Text="{Binding EstimatedCostDisplay}" FontSize="12" TextWrapping="Wrap"/>
+                            </Border>
+
+                            <TextBlock Text="WHOLE-SCHOOL INSIGHTS (ANONYMISED)" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,10"/>
+                            <Border Background="{DynamicResource ThemePreviewBg}" CornerRadius="8" Padding="12" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1" Margin="0,0,0,10">
+                                <TextBlock Text="{Binding AggregateInsightsDisplay}" FontSize="12" TextWrapping="Wrap"/>
+                            </Border>
+
+                            <TextBlock Text="ABOUT" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,15,0,10"/>
+                            <Border Background="{DynamicResource ThemePreviewBg}" CornerRadius="8" Padding="15" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="1">
+                                <StackPanel>
+                                    <TextBlock Text="FacultyFlow AI — Student Report Generator" FontWeight="SemiBold" FontSize="13"/>
+                                    <TextBlock Text="{Binding AppVersionDisplay}" FontSize="12" Foreground="{DynamicResource ThemeMutedText}" Margin="0,4,0,0"/>
+                                    <TextBlock Text="{Binding AppBuildDateDisplay}" FontSize="12" Foreground="{DynamicResource ThemeMutedText}" Margin="0,2,0,0"/>
+                                    <TextBlock Text="Support: jeremy.m.everitt@googlemail.com" FontSize="12" Foreground="{DynamicResource ThemeMutedText}" Margin="0,2,0,0"/>
+                                    <TextBlock Text="Please quote the version number above when reporting a problem." FontSize="11" FontStyle="Italic" Foreground="{DynamicResource ThemeMutedText}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
@@ -650,9 +895,51 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Margin="0,0,0,15">
-                    <TextBlock Text="REPORT PREVIEW" FontWeight="Bold" FontSize="16" Foreground="{Binding SettingsVM.NavBarBackground}"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="REPORT PREVIEW" FontWeight="Bold" FontSize="16" Foreground="{Binding SettingsVM.NavBarBackground}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding ReadingLevelDisplay}" FontSize="11" Foreground="{DynamicResource ThemeMutedText}" VerticalAlignment="Center"
+                                   ToolTip="A rough guide to how easy this report is for parents to read"/>
+                    </Grid>
                     <TextBlock Text="{Binding StatusText}" FontSize="12" Margin="0,4,0,0" Foreground="{DynamicResource ThemeMutedText}"/>
-                    <ProgressBar Height="4" IsIndeterminate="True" Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVis}}" Margin="0,10,0,0" Foreground="{Binding SettingsVM.NavBarBackground}" Background="Transparent" BorderThickness="0"/>
+                    <ProgressBar Height="4" IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" Margin="0,10,0,0" Foreground="{Binding SettingsVM.NavBarBackground}" Background="Transparent" BorderThickness="0"/>
+
+                    <WrapPanel Margin="0,8,0,0">
+                        <Button Command="{Binding SimplifyForParentsCommand}" Style="{StaticResource ModernButtonStyle}" Height="26" Padding="8,0" FontSize="11" Margin="0,0,6,4"
+                                ToolTip="Rewrite this report in plainer language for parents (shown side-by-side)">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE8C1;" FontSize="11"/>
+                                <TextBlock Text="Simplify for Parents"/>
+                            </StackPanel>
+                        </Button>
+                        <ComboBox SelectedValue="{Binding SelectedTranslationLanguage, Mode=TwoWay}" ItemsSource="{Binding TranslationLanguages}" Height="26" Width="110" FontSize="11" Margin="0,0,4,4"
+                                  AutomationProperties.Name="Translation language"/>
+                        <Button Command="{Binding TranslateReportCommand}" Style="{StaticResource ModernButtonStyle}" Height="26" Padding="8,0" FontSize="11" Margin="0,0,6,4"
+                                ToolTip="Machine-translate this report for EAL families (clearly labelled; shown side-by-side)">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE775;" FontSize="11"/>
+                                <TextBlock Text="Translate"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding ReadAloudCommand}" Style="{StaticResource ModernButtonStyle}" Height="26" Padding="8,0" FontSize="11" Margin="0,0,6,4"
+                                ToolTip="Read the report aloud — proofread by ear before sending">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE767;" FontSize="11"/>
+                                <TextBlock Text="Read Aloud"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding StopReadingCommand}" Content="Stop" Style="{StaticResource ModernButtonStyle}" Height="26" Padding="8,0" FontSize="11" Margin="0,0,6,4" AutomationProperties.Name="Stop reading aloud"/>
+                        <Button Command="{Binding RestoreAiDraftCommand}" Style="{StaticResource ModernButtonStyle}" Height="26" Padding="8,0" FontSize="11" Margin="0,0,0,4"
+                                ToolTip="Undo all your edits and go back to the AI's original draft">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE7A7;" FontSize="11"/>
+                                <TextBlock Text="Restore AI Draft"/>
+                            </StackPanel>
+                        </Button>
+                    </WrapPanel>
                 </StackPanel>
 
                 <Grid Grid.Row="1" Margin="0,0,0,15">
@@ -678,16 +965,32 @@
                 </Grid>
 
                 <WrapPanel Grid.Row="2" HorizontalAlignment="Right">
-                    <Button Command="{Binding UpdateHistoryEditCommand}" Content="💾 Save Edits" Style="{StaticResource ModernButtonStyle}" Background="#E8F5E9" Foreground="#2E7D32" Margin="5,5,0,0" />
-                    <Button Command="{Binding CopyReportCommand}" Content="📋 Copy Text" Style="{StaticResource ModernButtonStyle}" Margin="5,5,0,0" />
-                    <Button Command="{Binding EmailReportCommand}" Content="✉️ Email Parent" Style="{StaticResource ModernButtonStyle}" Background="#FFFFE0B2" Foreground="#FFE65100" Margin="5,5,0,0" />
-                    <Button Command="{Binding SavePdfCommand}" Content="Export PDF" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FFF44336" Margin="5,5,0,0" />
-                    <Button Command="{Binding SaveWordCommand}" Content="Export Word (.docx)" Style="{StaticResource ModernPrimaryButtonStyle}" Background="#FF1976D2" Margin="5,5,0,0" />
+                    <Button Command="{Binding UpdateHistoryEditCommand}" AutomationProperties.Name="Save Edits" Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeSuccessBg}" Foreground="{DynamicResource ThemeSuccessText}" Margin="5,5,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE74E;"/>
+                            <TextBlock Text="Save Edits"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding CopyReportCommand}" AutomationProperties.Name="Copy Text" Style="{StaticResource ModernButtonStyle}" Margin="5,5,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE8C8;"/>
+                            <TextBlock Text="Copy Text"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding EmailReportCommand}" AutomationProperties.Name="Email Parent" Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeWarningBg}" Foreground="{DynamicResource ThemeWarningText}" Margin="5,5,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE715;"/>
+                            <TextBlock Text="Email Parent"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding SavePdfCommand}" Content="Export PDF" Style="{StaticResource ModernPrimaryButtonStyle}" Background="{DynamicResource ThemeDangerStrongBg}" Margin="5,5,0,0" />
+                    <Button Command="{Binding SaveWordCommand}" Content="Export Word (.docx)" Style="{StaticResource ModernPrimaryButtonStyle}" Background="{DynamicResource ThemeAccentBlueBg}" Margin="5,5,0,0" />
                 </WrapPanel>
             </Grid>
         </Border>
 
-        <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource ModernCardStyle}" x:Name="Card3">
+        <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource ModernCardStyle}" x:Name="Card3"
+                Visibility="{Binding SettingsVM.IsSimpleMode, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -742,10 +1045,23 @@
             </Grid>
         </Border>
 
-        <Border x:Name="overlayWelcome" Visibility="{Binding IsWelcomeOverlayVisible, Converter={StaticResource BoolToVis}}" Grid.Row="0" Grid.RowSpan="2" Grid.ColumnSpan="3" Background="#F2000000" Panel.ZIndex="100">
+        <!-- Persistent status bar: success/failure messages stay visible app-wide instead of
+             relying solely on the small status line inside the preview card -->
+        <Border Grid.Row="2" Grid.ColumnSpan="3" Background="{DynamicResource ThemeCardBg}" BorderBrush="{DynamicResource ThemeBorder}" BorderThickness="0,1,0,0" Padding="15,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource ThemeText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding AboutInfo}" FontSize="11" Foreground="{DynamicResource ThemeMutedText}" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <Border x:Name="overlayWelcome" Visibility="{Binding IsWelcomeOverlayVisible, Converter={StaticResource BoolToVis}}" Grid.Row="0" Grid.RowSpan="3" Grid.ColumnSpan="3" Background="#F2000000" Panel.ZIndex="100">
             <Border Background="{DynamicResource ThemeCardBg}" CornerRadius="12" Width="720" Height="580" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="35">
                 <StackPanel>
-                    <TextBlock Text="👋 Welcome to AI Student Report Generator" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource ThemeText}" TextAlignment="Center" Margin="0,0,0,10"/>
+                    <TextBlock Text="Welcome to AI Student Report Generator" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource ThemeText}" TextAlignment="Center" Margin="0,0,0,10"/>
 
                     <StackPanel Visibility="{Binding IsProfileSetupVisible, Converter={StaticResource BoolToVis}}" Margin="0,5,0,15">
                         <TextBlock Text="Configure teacher signature contexts details here." FontSize="14" Foreground="{DynamicResource ThemeMutedText}" TextAlignment="Center" Margin="0,0,0,15"/>
@@ -764,7 +1080,7 @@
                     </StackPanel>
 
                     <StackPanel Visibility="{Binding IsWelcomeBackVisible, Converter={StaticResource BoolToVis}}" Margin="0,10,0,15">
-                        <TextBlock Text="System Active &amp; Ready!" FontSize="20" FontWeight="Bold" Foreground="#4CAF50" TextAlignment="Center" Margin="0,0,0,5"/>
+                        <TextBlock Text="System Active &amp; Ready!" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource ThemeSuccessAccent}" TextAlignment="Center" Margin="0,0,0,5"/>
                         <TextBlock Text="Everything is set up and ready to go" FontSize="14" Foreground="{DynamicResource ThemeMutedText}" TextAlignment="Center" Margin="0,0,0,10"/>
                         <Button Command="{Binding EditWelcomeProfileCommand}" Content="Edit Administrative Profile Properties" Style="{StaticResource ModernButtonStyle}" Background="Transparent" Foreground="{Binding SettingsVM.NavBarBackground}" Height="25" HorizontalAlignment="Center"/>
                     </StackPanel>
@@ -776,20 +1092,29 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Margin="5">
-                            <TextBlock Text="⚙️ Configuration" FontSize="16" FontWeight="Bold" Foreground="#2196F3" TextAlignment="Center" Margin="0,0,0,5"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,5">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE713;" FontSize="15" Foreground="{DynamicResource ThemeInfoAccent}"/>
+                                <TextBlock Text="Configuration" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource ThemeInfoAccent}"/>
+                            </StackPanel>
                             <TextBlock Text="Enter your AI provider key in settings to get started." Foreground="{DynamicResource ThemeText}" TextWrapping="Wrap" TextAlignment="Center" FontSize="12"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Margin="5">
-                            <TextBlock Text="📝 Aggregation" FontSize="16" FontWeight="Bold" Foreground="#4CAF50" TextAlignment="Center" Margin="0,0,0,5"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,5">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE70F;" FontSize="15" Foreground="{DynamicResource ThemeSuccessAccent}"/>
+                                <TextBlock Text="Aggregation" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource ThemeSuccessAccent}"/>
+                            </StackPanel>
                             <TextBlock Text="Add your students and subjects to your student list." Foreground="{DynamicResource ThemeText}" TextWrapping="Wrap" TextAlignment="Center" FontSize="12"/>
                         </StackPanel>
                         <StackPanel Grid.Column="2" Margin="5">
-                            <TextBlock Text="🚀 Optimization" FontSize="16" FontWeight="Bold" Foreground="#FF9800" TextAlignment="Center" Margin="0,0,0,5"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,5">
+                                <TextBlock Style="{StaticResource ButtonIconStyle}" Text="&#xE945;" FontSize="15" Foreground="{DynamicResource ThemeWarningAccent}"/>
+                                <TextBlock Text="Optimization" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource ThemeWarningAccent}"/>
+                            </StackPanel>
                             <TextBlock Text="Generate reports for your whole class at once" Foreground="{DynamicResource ThemeText}" TextWrapping="Wrap" TextAlignment="Center" FontSize="12"/>
                         </StackPanel>
                     </Grid>
-                    <Border Background="#FFF3E0" CornerRadius="8" Padding="12" Margin="0,0,0,20">
-                        <TextBlock Text="Your student data is sent securely to your chosen AI provider only to generate the report. It is never stored on external servers or used to train AI models. All local files are encrypted and stored only on this computer." TextWrapping="Wrap" Foreground="#E65100" FontWeight="SemiBold" TextAlignment="Center" FontSize="11"/>
+                    <Border Background="{DynamicResource ThemeWarningBg}" CornerRadius="8" Padding="12" Margin="0,0,0,20">
+                        <TextBlock Text="Your student data is sent securely to your chosen AI provider only to generate the report. It is never stored on external servers or used to train AI models. All local files are encrypted and stored only on this computer." TextWrapping="Wrap" Foreground="{DynamicResource ThemeWarningText}" FontWeight="SemiBold" TextAlignment="Center" FontSize="11"/>
                     </Border>
                     <Grid>
                         <Button Command="{Binding EnterAppCommand}" Content="Get Started" Height="45" Width="360" FontSize="15" Style="{StaticResource ModernPrimaryButtonStyle}" HorizontalAlignment="Center"/>

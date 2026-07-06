@@ -47,4 +47,15 @@ Security 🛡️: Use the "Profile & Branding" tab to set a master password, ens
 📖 Documentation
 Architecture 🏗️: Built using the Model-View-ViewModel (MVVM) pattern for a decoupled, testable, and maintainable codebase.
 
-Security 🔒: Implements local machine-bound cryptography to ensure that all generated records and configuration tokens reside strictly within your workstation's local encrypted storage partitions.
+Security 🔒: Implements local machine-bound cryptography to ensure that all generated records and configuration tokens reside strictly within your workstation's local encrypted storage partitions. See SECURITY.md for the full protection model and known limitations.
+
+Testing 🧪: The StudentReportGenerator.Tests project covers the security-critical services (password hashing/verification, encrypted settings and history round-trips, and prompt assembly). Run with `dotnet test`.
+
+Logging 🪵: Runtime logs are written to `%AppData%\FacultyFlow\logs` (daily rolling files, kept 14 days). Include the latest log when reporting a problem, along with the version shown in Usage Statistics → About.
+
+📦 Distribution
+The supported release path is a self-contained, single-file publish via `Properties/PublishProfiles/FolderProfile.pubxml`:
+
+    dotnet publish StudentReportGenerator/StudentReportGenerator.csproj -c Release /p:PublishProfile=FolderProfile
+
+This produces one .exe (no .NET install required on the target machine) suitable for school IT departments to deploy. The previous ClickOnce profile was removed in favour of this approach; if automatic updates become a requirement, revisit ClickOnce or an installer framework such as Squirrel/MSIX at that point.

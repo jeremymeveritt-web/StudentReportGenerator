@@ -44,6 +44,10 @@ namespace StudentReportGenerator.Services
         public ICommand UploadLogoCommand { get; }
         public ICommand AddFrameworkCommand { get; }
         public ICommand TestApiCommand { get; }
+        public ICommand ExportLibraryCommand { get; }
+        public ICommand ImportLibraryCommand { get; }
+        public ICommand PurgeSisCacheCommand { get; }
+        public ICommand SyncNowCommand { get; }
 
 
         public SettingsViewModel(AppStateService appState)
@@ -54,7 +58,11 @@ namespace StudentReportGenerator.Services
             UnlockSettingsCommand = new RelayCommand(_ => UnlockSettings());
             UploadLogoCommand = new RelayCommand(_ => UploadLogo());
             AddFrameworkCommand = new RelayCommand(_ => AddCustomFrameworkTemplate());
-            TestApiCommand = new RelayCommand(_ => TestApiKey());
+            TestApiCommand = new RelayCommand(_ => TestApiKey(), _ => !IsTestingConnection);
+            ExportLibraryCommand = new RelayCommand(_ => ExportSharedLibrary());
+            ImportLibraryCommand = new RelayCommand(_ => ImportSharedLibrary());
+            PurgeSisCacheCommand = new RelayCommand(_ => PurgeSisCache());
+            SyncNowCommand = new RelayCommand(_ => SyncNow());
 
 
 
@@ -73,11 +81,12 @@ namespace StudentReportGenerator.Services
             string key = CryptoService.DecryptSecret(encryptedKey);
             if (string.IsNullOrWhiteSpace(key) || key.Length < 10)
             {
-                System.Windows.MessageBox.Show("No API key entered. Please paste your key first.", "No Key Found", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                ApiTestStatus = "⚠️ No API key entered. Please paste your key first.";
                 return;
             }
 
-            System.Windows.MessageBox.Show("Testing connection to provider — please wait...", "Connecting", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            IsTestingConnection = true;
+            ApiTestStatus = "Testing connection to provider...";
 
             try
             {
@@ -91,15 +100,19 @@ namespace StudentReportGenerator.Services
 
                 var response = await client.GetAsync(testUrl);
 
-                // ADDED: MethodNotAllowed (405) for Claude
+                // MethodNotAllowed (405) counts as success for Claude (GET on a POST-only endpoint still proves the key is accepted)
                 if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.BadRequest || response.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed)
-                    System.Windows.MessageBox.Show("Connection successful! Your API key is working correctly.", "Connected ✅", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                    ApiTestStatus = "✅ Connection successful! Your API key is working correctly.";
                 else
-                    System.Windows.MessageBox.Show($"Connection failed (Error {(int)response.StatusCode}). Check your key.", "Key Invalid ❌", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                    ApiTestStatus = $"❌ Connection failed (Error {(int)response.StatusCode}). Check your key.";
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show($"Network error: {ex.Message}", "Test Failed", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                ApiTestStatus = $"❌ Network error: {ex.Message}";
+            }
+            finally
+            {
+                IsTestingConnection = false;
             }
         }
 
@@ -115,8 +128,9 @@ namespace StudentReportGenerator.Services
             if (!string.IsNullOrEmpty(settings.SmtpPassword))
                 _settingsSmtpSecurePassword = ConvertToSecureString(CryptoService.DecryptSecret(settings.SmtpPassword));
 
-            _isDarkMode = settings.IsDarkMode; 
-            ApplyTheme(_isDarkMode);           
+            _isDarkMode = settings.IsDarkMode;
+            ApplyTheme(_isDarkMode);
+            ApplyFontPreferences();
 
             ApplyBrandingConfiguration();
             EvaluateAiProviderOptions(settings.AiProvider);
@@ -132,7 +146,7 @@ namespace StudentReportGenerator.Services
             _appState.CurrentSettings.SmtpPassword = CryptoService.EncryptSecret(plainSmtp);
 
             if (DisableMasterPassword) _appState.CurrentSettings.MasterPassword = string.Empty;
-            else if (!string.IsNullOrEmpty(SettingsUnlockPassword)) _appState.CurrentSettings.MasterPassword = CryptoService.EncryptSecret(SettingsUnlockPassword);
+            else if (!string.IsNullOrEmpty(SettingsMasterPassword)) _appState.CurrentSettings.MasterPassword = CryptoService.HashPassword(SettingsMasterPassword);
 
             FlushCurrentApiKey(); // Only this is needed!
 
@@ -307,6 +321,10 @@ namespace StudentReportGenerator.Services
         public ImageSource? SchoolLogoImage { get => _schoolLogoImage; set => SetProperty(ref _schoolLogoImage, value); }
         public bool IsLogoVisible { get => _isLogoVisible; set => SetProperty(ref _isLogoVisible, value); }
         public string DynamicApiKeyLabel { get => _dynamicApiKeyLabel; set => SetProperty(ref _dynamicApiKeyLabel, value); }
+        private bool _isTestingConnection = false;
+        public bool IsTestingConnection { get => _isTestingConnection; set { if (SetProperty(ref _isTestingConnection, value)) System.Windows.Input.CommandManager.InvalidateRequerySuggested(); } }
+        private string _apiTestStatus = string.Empty;
+        public string ApiTestStatus { get => _apiTestStatus; set => SetProperty(ref _apiTestStatus, value); }
         public ObservableCollection<ComboBoxItemWrapper> ModelTierOptions { get => _modelTierOptions; set => SetProperty(ref _modelTierOptions, value); }
         public string SettingsNewFrameworkName { get => _settingsNewFrameworkName; set => SetProperty(ref _settingsNewFrameworkName, value); }
         public string SettingsNewFrameworkInstruction { get => _settingsNewFrameworkInstruction; set => SetProperty(ref _settingsNewFrameworkInstruction, value); }
@@ -368,6 +386,182 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        // --- Accessibility & interface preferences ---
+        public bool IsDyslexiaFriendlyFont
+        {
+            get => _appState.CurrentSettings.DyslexiaFriendlyFont;
+            set
+            {
+                if (_appState.CurrentSettings.DyslexiaFriendlyFont != value)
+                {
+                    _appState.CurrentSettings.DyslexiaFriendlyFont = value;
+                    _appState.SaveSettings();
+                    ApplyFontPreferences();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public double UiTextScale
+        {
+            get => _appState.CurrentSettings.UiTextScale;
+            set
+            {
+                double clamped = Math.Clamp(value, 0.85, 1.4);
+                if (Math.Abs(_appState.CurrentSettings.UiTextScale - clamped) > 0.001)
+                {
+                    _appState.CurrentSettings.UiTextScale = clamped;
+                    _appState.SaveSettings();
+                    ApplyFontPreferences();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool IsSimpleMode
+        {
+            get => _appState.CurrentSettings.SimpleMode;
+            set
+            {
+                if (_appState.CurrentSettings.SimpleMode != value)
+                {
+                    _appState.CurrentSettings.SimpleMode = value;
+                    _appState.SaveSettings();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private void ApplyFontPreferences()
+        {
+            var res = System.Windows.Application.Current.Resources;
+            res["AppFontFamily"] = new System.Windows.Media.FontFamily(
+                _appState.CurrentSettings.DyslexiaFriendlyFont ? "Comic Sans MS" : "Segoe UI");
+            res["AppFontSize"] = 13.0 * _appState.CurrentSettings.UiTextScale;
+        }
+
+        // --- Trust & disclosure ---
+        public bool AppendAiDisclosure
+        {
+            get => _appState.CurrentSettings.AppendAiDisclosure;
+            set { if (_appState.CurrentSettings.AppendAiDisclosure != value) { _appState.CurrentSettings.AppendAiDisclosure = value; _appState.SaveSettings(); OnPropertyChanged(); } }
+        }
+
+        public bool EnableSafeguardingPrompt
+        {
+            get => _appState.CurrentSettings.EnableSafeguardingPrompt;
+            set { if (_appState.CurrentSettings.EnableSafeguardingPrompt != value) { _appState.CurrentSettings.EnableSafeguardingPrompt = value; _appState.SaveSettings(); OnPropertyChanged(); } }
+        }
+
+        // --- School Connection (IT/data-manager tier, behind the master-password lock) ---
+        public System.Collections.Generic.List<string> SchoolDataProviderOptions { get; } = new()
+        {
+            "Manual Entry",
+            "Wonde (UK) — coming soon",
+            "OneRoster / Clever / ClassLink (US) — coming soon",
+        };
+
+        public string SelectedSchoolDataProvider
+        {
+            get => _appState.CurrentSettings.SchoolDataProvider;
+            set
+            {
+                string clean = SanitizeControlOutput(value);
+                // Only Manual Entry is live today; connector choices are visible so IT can
+                // see the roadmap, but they cannot be activated until the integration ships
+                if (clean.Contains("coming soon"))
+                {
+                    MessageBox.Show("This SIS connector is on the roadmap but not yet available. The app will continue using manual entry.", "Not Yet Available", MessageBoxButton.OK, MessageBoxImage.Information);
+                    clean = "Manual Entry";
+                }
+                if (_appState.CurrentSettings.SchoolDataProvider != clean)
+                {
+                    _appState.CurrentSettings.SchoolDataProvider = clean;
+                    _appState.SaveSettings();
+                }
+                OnPropertyChanged();
+            }
+        }
+
+        public bool IncludeAttendanceInPrompts
+        {
+            get => _appState.CurrentSettings.IncludeAttendanceInPrompts;
+            set { if (_appState.CurrentSettings.IncludeAttendanceInPrompts != value) { _appState.CurrentSettings.IncludeAttendanceInPrompts = value; _appState.SaveSettings(); OnPropertyChanged(); } }
+        }
+
+        public bool IncludeBehaviourInPrompts
+        {
+            get => _appState.CurrentSettings.IncludeBehaviourInPrompts;
+            set { if (_appState.CurrentSettings.IncludeBehaviourInPrompts != value) { _appState.CurrentSettings.IncludeBehaviourInPrompts = value; _appState.SaveSettings(); OnPropertyChanged(); } }
+        }
+
+        public bool IncludeGradesInPrompts
+        {
+            get => _appState.CurrentSettings.IncludeGradesInPrompts;
+            set { if (_appState.CurrentSettings.IncludeGradesInPrompts != value) { _appState.CurrentSettings.IncludeGradesInPrompts = value; _appState.SaveSettings(); OnPropertyChanged(); } }
+        }
+
+        public bool IncludeSupportPlanInPrompts
+        {
+            get => _appState.CurrentSettings.IncludeSupportPlanInPrompts;
+            set { if (_appState.CurrentSettings.IncludeSupportPlanInPrompts != value) { _appState.CurrentSettings.IncludeSupportPlanInPrompts = value; _appState.SaveSettings(); OnPropertyChanged(); } }
+        }
+
+        public string LastSisSyncDisplay => _appState.CurrentSettings.LastSisSyncUtc.HasValue
+            ? $"Last synced: {_appState.CurrentSettings.LastSisSyncUtc.Value.ToLocalTime():g}"
+            : "Never synced (no SIS connection configured).";
+
+        private void SyncNow()
+        {
+            if (_appState.CurrentSettings.SchoolDataProvider == "Manual Entry")
+            {
+                MessageBox.Show("No SIS connection is configured, so there is nothing to sync. Choose a school data provider first (connectors arriving in a future update).", "Nothing to Sync", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            _appState.CurrentSettings.LastSisSyncUtc = DateTime.UtcNow;
+            _appState.SaveSettings();
+            OnPropertyChanged(nameof(LastSisSyncDisplay));
+        }
+
+        private void PurgeSisCache()
+        {
+            if (MessageBox.Show("Delete all locally cached school data (attendance, behaviour, grades)? Reports will fall back to manual entry until the next sync.", "Purge Cached School Data", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+            {
+                SchoolDataCacheService.PurgeAll();
+                MessageBox.Show("Cached school data deleted.", "Done", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        // --- Shared library (HoD/SLT publish once, teachers import) ---
+        private void ExportSharedLibrary()
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "FacultyFlow Library (*.json)|*.json", FileName = "facultyflow-library.json" };
+            if (dialog.ShowDialog() == true)
+            {
+                FrameworkShareService.Export(dialog.FileName, _appState.CurrentSettings.CustomFrameworks, _appState.CurrentSettings.CurriculumTopics);
+                MessageBox.Show("Writing styles and curriculum topics exported. Share this file with your department so everyone writes in a consistent voice.", "Library Exported", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        private void ImportSharedLibrary()
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "FacultyFlow Library (*.json)|*.json" };
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var (frameworksAdded, topicsAdded) = FrameworkShareService.Import(dialog.FileName, _appState.CurrentSettings.CustomFrameworks, _appState.CurrentSettings.CurriculumTopics);
+                    _appState.SaveSettings();
+                    OnPropertyChanged(nameof(CustomFrameworks));
+                    MessageBox.Show($"Imported {frameworksAdded} writing style(s) and {topicsAdded} curriculum topic(s).", "Library Imported", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch
+                {
+                    MessageBox.Show("That file could not be read as a FacultyFlow library.", "Import Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
         private bool _isDarkMode;
         public bool IsDarkMode
         {
@@ -383,28 +577,90 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        // Every key in App.xaml must appear in BOTH palettes so Dark Mode swaps the full theme.
+        private static readonly System.Collections.Generic.Dictionary<string, string> LightPalette = new()
+        {
+            ["ThemeAppBg"] = "#FFFAFAFA",
+            ["ThemeCardBg"] = "#FFFFFFFF",
+            ["ThemeText"] = "#FF333333",
+            ["ThemeMutedText"] = "#FF616161",
+            ["ThemeBorder"] = "#FFDDDDDD",
+            ["ThemeInputBg"] = "#FFFFFFFF",
+            ["ThemePreviewBg"] = "#FFF9F9F9",
+            ["ThemeButtonBg"] = "#FFEEEEEE",
+            ["ThemeButtonHoverBg"] = "#FFDDDDDD",
+            ["ThemePrimaryBtnBg"] = "#FF4CAF50",
+            ["ThemePrimaryBtnHoverBg"] = "#FF43A047",
+            ["ThemeDangerBg"] = "#FFFFEBEE",
+            ["ThemeDangerText"] = "#FFD32F2F",
+            ["ThemeDangerStrongBg"] = "#FFF44336",
+            ["ThemeInfoBg"] = "#FFE0F7FA",
+            ["ThemeInfoText"] = "#FF00838F",
+            ["ThemeInfoAccent"] = "#FF1E88E5",
+            ["ThemeWarningBg"] = "#FFFFF3E0",
+            ["ThemeWarningText"] = "#FFE65100",
+            ["ThemeWarningAccent"] = "#FFF57C00",
+            ["ThemeSuccessBg"] = "#FFE8F5E9",
+            ["ThemeSuccessText"] = "#FF2E7D32",
+            ["ThemeSuccessAccent"] = "#FF43A047",
+            ["ThemeAccentBlueBg"] = "#FF1976D2",
+            ["ThemeMetricCardBg"] = "#FFF5F5F5",
+            ["ThemeMetricIndigoBg"] = "#FFE8EAF6",
+            ["ThemeMetricNvidiaBg"] = "#FFE1F5FE",
+            ["ThemeMetricNvidiaText"] = "#FF01579B",
+            ["ThemeMetricGeminiBg"] = "#FFE0F7FA",
+            ["ThemeMetricGeminiText"] = "#FF006064",
+            ["ThemeMetricOpenAiBg"] = "#FFF3E5F5",
+            ["ThemeMetricOpenAiText"] = "#FF4A148C",
+            ["ThemeMetricClaudeBg"] = "#FFFFF3E0",
+            ["ThemeMetricClaudeText"] = "#FFE65100",
+        };
+
+        private static readonly System.Collections.Generic.Dictionary<string, string> DarkPalette = new()
+        {
+            ["ThemeAppBg"] = "#FF121212",
+            ["ThemeCardBg"] = "#FF1E1E1E",
+            ["ThemeText"] = "#FFE0E0E0",
+            ["ThemeMutedText"] = "#FFAAAAAA",
+            ["ThemeBorder"] = "#FF333333",
+            ["ThemeInputBg"] = "#FF2D2D2D",
+            ["ThemePreviewBg"] = "#FF252525",
+            ["ThemeButtonBg"] = "#FF2F2F2F",
+            ["ThemeButtonHoverBg"] = "#FF3D3D3D",
+            ["ThemePrimaryBtnBg"] = "#FF388E3C",
+            ["ThemePrimaryBtnHoverBg"] = "#FF2E7D32",
+            ["ThemeDangerBg"] = "#FF3B2226",
+            ["ThemeDangerText"] = "#FFEF9A9A",
+            ["ThemeDangerStrongBg"] = "#FFD32F2F",
+            ["ThemeInfoBg"] = "#FF0F2E33",
+            ["ThemeInfoText"] = "#FF4DD0E1",
+            ["ThemeInfoAccent"] = "#FF64B5F6",
+            ["ThemeWarningBg"] = "#FF3A2A16",
+            ["ThemeWarningText"] = "#FFFFB74D",
+            ["ThemeWarningAccent"] = "#FFFFB74D",
+            ["ThemeSuccessBg"] = "#FF1B2E1F",
+            ["ThemeSuccessText"] = "#FF81C784",
+            ["ThemeSuccessAccent"] = "#FF81C784",
+            ["ThemeAccentBlueBg"] = "#FF1565C0",
+            ["ThemeMetricCardBg"] = "#FF232323",
+            ["ThemeMetricIndigoBg"] = "#FF23263A",
+            ["ThemeMetricNvidiaBg"] = "#FF12293A",
+            ["ThemeMetricNvidiaText"] = "#FF81D4FA",
+            ["ThemeMetricGeminiBg"] = "#FF103235",
+            ["ThemeMetricGeminiText"] = "#FF80DEEA",
+            ["ThemeMetricOpenAiBg"] = "#FF2A1D31",
+            ["ThemeMetricOpenAiText"] = "#FFCE93D8",
+            ["ThemeMetricClaudeBg"] = "#FF33270F",
+            ["ThemeMetricClaudeText"] = "#FFFFCC80",
+        };
+
         private void ApplyTheme(bool isDark)
         {
+            var palette = isDark ? DarkPalette : LightPalette;
             var res = System.Windows.Application.Current.Resources;
-            if (isDark)
+            foreach (var entry in palette)
             {
-                res["ThemeAppBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF121212"));
-                res["ThemeCardBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF1E1E1E"));
-                res["ThemeText"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFE0E0E0"));
-                res["ThemeMutedText"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFAAAAAA"));
-                res["ThemeBorder"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF333333"));
-                res["ThemeInputBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF2D2D2D"));
-                res["ThemePreviewBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF252525"));
-            }
-            else
-            {
-                res["ThemeAppBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFFAFAFA"));
-                res["ThemeCardBg"] = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.White);
-                res["ThemeText"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF333333"));
-                res["ThemeMutedText"] = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Gray);
-                res["ThemeBorder"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFDDDDDD"));
-                res["ThemeInputBg"] = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.White);
-                res["ThemePreviewBg"] = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFF9F9F9"));
+                res[entry.Key] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(entry.Value));
             }
         }
     }

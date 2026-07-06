@@ -17,6 +17,27 @@ namespace StudentReportGenerator.Models
         public string TargetGrade { get; set; } = string.Empty;
         public string SupportNeeds { get; set; } = string.Empty;
         public string Pronouns { get; set; } = "They/Them";
+
+        // SIS-grounded facts (populated from the school data orchestrator when a connection exists)
+        public double? AttendancePercent { get; set; }
+        public int? BehaviourPoints { get; set; }
+        public string RecentGradesSummary { get; set; } = string.Empty;
+
+        // When set, the prompt builder ignores the report framing entirely and issues this
+        // instruction against RawNotes instead (used for simplify/translate/tone-audit calls)
+        public string UtilityInstruction { get; set; } = string.Empty;
+    }
+
+    // Verified facts pulled from the school's SIS/MIS (or its local encrypted cache)
+    public class StudentAcademicStats
+    {
+        public string ExternalStudentId { get; set; } = string.Empty;
+        public double? AttendancePercent { get; set; }
+        public int? BehaviourPoints { get; set; }
+        public Dictionary<string, string> RecentGrades { get; set; } = new Dictionary<string, string>();
+        public string SupportPlanSummary { get; set; } = string.Empty;
+        public string TargetGrade { get; set; } = string.Empty;
+        public DateTime LastSyncedUtc { get; set; }
     }
 
     public class ReportResponse
@@ -37,6 +58,9 @@ namespace StudentReportGenerator.Models
         private string _generatedReport = string.Empty;
         public string StudentName { get; set; } = string.Empty;
 
+        // The untouched AI draft as first generated, so a teacher can always get back to it
+        public string OriginalDraft { get; set; } = string.Empty;
+
         public string GeneratedReport
         {
             get => _generatedReport;
@@ -55,6 +79,15 @@ namespace StudentReportGenerator.Models
         }
     }
 
+    // School letterhead details applied to Word/PDF exports so reports look like they
+    // belong to the school, not to a generic app
+    public class SchoolBranding
+    {
+        public string SchoolName { get; set; } = string.Empty;
+        public string LogoPath { get; set; } = string.Empty;
+        public string AccentColorHex { get; set; } = "#FF392A4C";
+    }
+
     public class ReportFramework
     {
         public string Name { get; set; } = string.Empty;
@@ -64,6 +97,10 @@ namespace StudentReportGenerator.Models
     public class StudentProfile
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
+
+        // The SIS's own stable pupil identifier (UPN in the UK, State Student ID in the US).
+        // Empty until a school data connection is configured; becomes the matching key once one is.
+        public string ExternalStudentId { get; set; } = string.Empty;
         public string FullName { get; set; } = string.Empty;
         public string ClassName { get; set; } = string.Empty;
         public string ParentEmail { get; set; } = string.Empty;
@@ -108,6 +145,25 @@ namespace StudentReportGenerator.Models
             "World War II History",
             "Intro to Physics"
         };
+
+        // --- School data (SIS/MIS) integration ---
+        public string SchoolDataProvider { get; set; } = "Manual Entry";
+        // Per-category opt-in: what a school's DPO allows to leave the building and reach an AI provider
+        public bool IncludeAttendanceInPrompts { get; set; } = false;
+        public bool IncludeBehaviourInPrompts { get; set; } = false;
+        public bool IncludeGradesInPrompts { get; set; } = false;
+        public bool IncludeSupportPlanInPrompts { get; set; } = false;
+        public int SisCacheRetentionDays { get; set; } = 120;
+        public DateTime? LastSisSyncUtc { get; set; }
+
+        // --- Trust & disclosure ---
+        public bool AppendAiDisclosure { get; set; } = true;
+        public bool EnableSafeguardingPrompt { get; set; } = true;
+
+        // --- Accessibility & interface ---
+        public bool DyslexiaFriendlyFont { get; set; } = false;
+        public double UiTextScale { get; set; } = 1.0;
+        public bool SimpleMode { get; set; } = false;
 
         public int TotalReportsGenerated { get; set; } = 0;
         public long TotalTokensEstimated { get; set; } = 0;

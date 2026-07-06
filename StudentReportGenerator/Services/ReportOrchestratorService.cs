@@ -1,6 +1,4 @@
-﻿using System;
-using System.Net.Http;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
@@ -8,12 +6,12 @@ namespace StudentReportGenerator.Services
     // This service acts as the traffic cop for all AI requests across the entire application.
     public class ReportOrchestratorService
     {
-        private readonly HttpClient _httpClient;
+        private readonly IAiServiceFactory _aiServiceFactory;
         private readonly AppStateService _appState;
 
-        public ReportOrchestratorService(HttpClient httpClient, AppStateService appState)
+        public ReportOrchestratorService(IAiServiceFactory aiServiceFactory, AppStateService appState)
         {
-            _httpClient = httpClient;
+            _aiServiceFactory = aiServiceFactory;
             _appState = appState;
         }
 
@@ -21,34 +19,10 @@ namespace StudentReportGenerator.Services
         {
             // Use the override if provided (for Compare Mode), otherwise use the global default
             string provider = providerOverride ?? _appState.CurrentSettings.AiProvider;
-            string activeKey = string.Empty;
-            IAiService aiEngine;
 
-            // 1. Decrypt the correct key, inject the correct model tier, and spin up the engine
-            if (provider.Contains("NVIDIA"))
-            {
-                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.NvidiaApiKey);
-                request.SelectedModel = _appState.CurrentSettings.NvidiaModelTier;
-                aiEngine = new NvidiaReportService(_httpClient, activeKey);
-            }
-            else if (provider.Contains("OpenAI"))
-            {
-                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.OpenAiApiKey);
-                request.SelectedModel = _appState.CurrentSettings.OpenAiModelTier;
-                aiEngine = new OpenAiReportService(_httpClient, activeKey);
-            }
-            else if (provider.Contains("Claude"))
-            {
-                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.ClaudeApiKey);
-                request.SelectedModel = _appState.CurrentSettings.ClaudeModelTier;
-                aiEngine = new ClaudeReportService(_httpClient, activeKey);
-            }
-            else
-            {
-                activeKey = CryptoService.DecryptSecret(_appState.CurrentSettings.GeminiApiKey);
-                request.SelectedModel = _appState.CurrentSettings.GeminiModelTier;
-                aiEngine = new GeminiReportService(_httpClient, activeKey);
-            }
+            // 1. Resolve the right engine, key, and model tier through the DI factory
+            var (aiEngine, activeKey, modelTier) = _aiServiceFactory.Create(provider);
+            request.SelectedModel = modelTier;
 
             if (string.IsNullOrWhiteSpace(activeKey))
             {

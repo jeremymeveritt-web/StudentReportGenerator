@@ -3,4 +3,5 @@
     <File Path="editorconfig.txt" />
   </Folder>
   <Project Path="StudentReportGenerator/StudentReportGenerator.csproj" />
+  <Project Path="StudentReportGenerator.Tests/StudentReportGenerator.Tests.csproj" />
 </Solution>

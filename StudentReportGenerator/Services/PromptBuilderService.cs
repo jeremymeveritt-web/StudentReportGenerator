@@ -8,6 +8,18 @@ namespace StudentReportGenerator.Services
     {
         public static string BuildSecurePrompt(ReportRequest request)
         {
+            // Utility mode: simplify/translate/tone-audit calls bypass the report framing
+            // entirely and run the given instruction against quarantined content.
+            if (!string.IsNullOrWhiteSpace(request.UtilityInstruction))
+            {
+                var usb = new StringBuilder();
+                usb.AppendLine(request.UtilityInstruction);
+                usb.AppendLine("\n<content>");
+                usb.AppendLine(request.RawNotes);
+                usb.AppendLine("</content>");
+                return usb.ToString();
+            }
+
             var sb = new StringBuilder();
 
             // 1. SYSTEM CONTEXT (Absolute Rules)
@@ -25,6 +37,9 @@ namespace StudentReportGenerator.Services
             // 3. HARD CONSTRAINTS
             sb.AppendLine($"TARGET WORD COUNT: Approximately {request.WordCount} words.");
             sb.AppendLine("DO NOT include any placeholder text like [Insert Name].");
+            // Guard against every child's report sounding identical when a whole school
+            // shares the same frameworks and providers
+            sb.AppendLine("Vary your sentence structure and opening phrases naturally; do not reuse stock phrasing from typical AI-written reports.");
 
             if (!string.IsNullOrWhiteSpace(request.TeacherSignoff) && request.TeacherSignoff != "Mr. / Ms. Teacher")
             {
@@ -41,6 +56,16 @@ namespace StudentReportGenerator.Services
 
             if (!string.IsNullOrWhiteSpace(request.SupportNeeds))
                 sb.AppendLine($"Special Educational Needs / Support: {request.SupportNeeds}");
+
+            // SIS-grounded facts (only present when the school has opted the category in)
+            if (request.AttendancePercent.HasValue)
+                sb.AppendLine($"Verified Attendance This Term: {request.AttendancePercent.Value:0.#}%");
+
+            if (request.BehaviourPoints.HasValue)
+                sb.AppendLine($"Verified Behaviour Points This Term: {request.BehaviourPoints.Value}");
+
+            if (!string.IsNullOrWhiteSpace(request.RecentGradesSummary))
+                sb.AppendLine($"Verified Recent Assessment Grades: {request.RecentGradesSummary}");
 
             sb.AppendLine($"\nTeacher Notes & Performance Data:\n{request.RawNotes}");
             sb.AppendLine("</student_data>");
