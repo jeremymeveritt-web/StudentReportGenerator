@@ -5,6 +5,9 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
+    /// <summary>Google Gemini provider. Has the most divergent request/response shape of the four
+    /// providers (nested "contents/parts" body, model name embedded in the URL, custom auth header),
+    /// which is exactly the kind of variance <see cref="IAiService"/> is designed to hide from callers.</summary>
     public class GeminiReportService : BaseAiService
     {
         public GeminiReportService(HttpClient httpClient, string apiKey) : base(httpClient, apiKey) { }

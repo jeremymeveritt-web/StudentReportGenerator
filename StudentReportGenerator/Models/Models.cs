@@ -4,6 +4,12 @@ using System.Text.RegularExpressions;
 
 namespace StudentReportGenerator.Models
 {
+    /// <summary>
+    /// Everything an <see cref="Services.IAiService"/> provider needs to generate one report (or,
+    /// when <see cref="UtilityInstruction"/> is set, to perform a one-off utility call such as
+    /// simplify/translate/tone-audit). Built by <c>MainViewModel</c> and consumed by
+    /// <see cref="Services.PromptBuilderService"/>.
+    /// </summary>
     public class ReportRequest
     {
         public string StudentName { get; set; } = string.Empty;
@@ -28,7 +34,8 @@ namespace StudentReportGenerator.Models
         public string UtilityInstruction { get; set; } = string.Empty;
     }
 
-    // Verified facts pulled from the school's SIS/MIS (or its local encrypted cache)
+    /// <summary>Verified facts pulled from the school's SIS/MIS (or its local encrypted cache via
+    /// <see cref="Services.SchoolDataCacheService"/>), keyed by <see cref="ExternalStudentId"/>.</summary>
     public class StudentAcademicStats
     {
         public string ExternalStudentId { get; set; } = string.Empty;
@@ -40,6 +47,8 @@ namespace StudentReportGenerator.Models
         public DateTime LastSyncedUtc { get; set; }
     }
 
+    /// <summary>The outcome of an AI generation call. Exactly one of <see cref="GeneratedReport"/>
+    /// (on success) or <see cref="ErrorMessage"/> (on failure) is meaningful, indicated by <see cref="IsSuccess"/>.</summary>
     public class ReportResponse
     {
         private string _generatedReport = string.Empty;
@@ -52,6 +61,8 @@ namespace StudentReportGenerator.Models
         public string ErrorMessage { get; set; } = string.Empty;
     }
 
+    /// <summary>One entry in the History Log: a generated report and its metadata, persisted via
+    /// <see cref="Services.HistoryDatabaseService"/>.</summary>
     public class SessionRecord
     {
         public Guid Id { get; set; } = Guid.NewGuid();
@@ -68,6 +79,8 @@ namespace StudentReportGenerator.Models
         }
         public DateTime Timestamp { get; set; }
 
+        /// <summary>Label shown in the History Log ListBox: student name (with any trailing
+        /// parenthetical/bracketed annotation stripped, e.g. "Tom (Yr 9)" → "Tom") plus the time generated.</summary>
         public string DisplayText
         {
             get
@@ -79,8 +92,9 @@ namespace StudentReportGenerator.Models
         }
     }
 
-    // School letterhead details applied to Word/PDF exports so reports look like they
-    // belong to the school, not to a generic app
+    /// <summary>School letterhead details (logo, name, accent colour) applied to Word/PDF exports
+    /// so reports look like they belong to the school, not to a generic app. See <see cref="Services.WordExportService"/>
+    /// and <see cref="Services.PdfExportService"/>.</summary>
     public class SchoolBranding
     {
         public string SchoolName { get; set; } = string.Empty;
@@ -88,18 +102,26 @@ namespace StudentReportGenerator.Models
         public string AccentColorHex { get; set; } = "#FF392A4C";
     }
 
+    /// <summary>A named tone/style template (e.g. "Formal &amp; Academic") that supplies the
+    /// <see cref="ReportRequest.SelectedFramework"/> instruction fed into the AI prompt.</summary>
     public class ReportFramework
     {
         public string Name { get; set; } = string.Empty;
         public string Instruction { get; set; } = string.Empty;
     }
 
+    /// <summary>A single student's roster entry: contact/context details a teacher maintains once
+    /// and reuses across every report for that student. Persisted via <see cref="Services.StudentDatabaseService"/>.</summary>
     public class StudentProfile
     {
+        /// <summary>Internal app identifier — a random GUID, unrelated to any school system.
+        /// Use <see cref="ExternalStudentId"/> when matching against a SIS/MIS.</summary>
         public string Id { get; set; } = Guid.NewGuid().ToString();
 
-        // The SIS's own stable pupil identifier (UPN in the UK, State Student ID in the US).
-        // Empty until a school data connection is configured; becomes the matching key once one is.
+        /// <summary>The SIS's own stable pupil identifier (UPN in the UK, State Student ID in the US).
+        /// Empty until a school data connection is configured; becomes the matching key once one is,
+        /// so that a student who changes their preferred name (or shares a name with another student)
+        /// is never confused with someone else.</summary>
         public string ExternalStudentId { get; set; } = string.Empty;
         public string FullName { get; set; } = string.Empty;
         public string ClassName { get; set; } = string.Empty;
@@ -109,6 +131,12 @@ namespace StudentReportGenerator.Models
         public string Pronouns { get; set; } = "They/Them";
     }
 
+    /// <summary>
+    /// The single settings object persisted (encrypted) via <see cref="Services.SecureSettingsService"/>
+    /// and shared by every ViewModel through <see cref="Services.AppStateService.CurrentSettings"/>.
+    /// Covers branding, AI provider configuration, security, school-data integration, accessibility,
+    /// and running usage totals — effectively the entire configuration surface of the app in one class.
+    /// </summary>
     public class AppSettings
     {
         public bool HasSeenTutorial { get; set; } = false;

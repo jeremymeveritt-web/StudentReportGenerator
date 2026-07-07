@@ -6,6 +6,11 @@ using PdfSharp.Drawing;
 
 namespace StudentReportGenerator.Services
 {
+    /// <summary>
+    /// Exports a single student's report as a PDF using PDFsharp, with manual word-wrapping and
+    /// page-break logic (PDFsharp has no built-in rich-text flow layout). Optionally applies a
+    /// <see cref="Models.SchoolBranding"/> letterhead matching <see cref="WordExportService"/>'s output.
+    /// </summary>
     public static class PdfExportService
     {
         public static void ExportSingle(string filePath, string studentName, string reportText, StudentReportGenerator.Models.SchoolBranding? branding = null)

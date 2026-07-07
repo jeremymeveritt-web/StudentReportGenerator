@@ -6,6 +6,8 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
+    /// <summary>NVIDIA NIM provider — the app's free-tier default. Exposes an OpenAI-compatible Chat
+    /// Completions endpoint, so the request/response shape here is intentionally identical to <see cref="OpenAiReportService"/>.</summary>
     public class NvidiaReportService : BaseAiService
     {
         public NvidiaReportService(HttpClient httpClient, string apiKey) : base(httpClient, apiKey) { }
@@ -29,6 +31,7 @@ namespace StudentReportGenerator.Services
 
         protected override string ParseResponse(string responseBody)
         {
+            // OpenAI-compatible response shape: choices[0].message.content
             using var doc = JsonDocument.Parse(responseBody);
             return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
         }

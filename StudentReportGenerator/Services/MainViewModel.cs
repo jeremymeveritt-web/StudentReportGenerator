@@ -14,6 +14,23 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
+    /// <summary>
+    /// The application's primary ViewModel, backing every tab except Settings (exposed separately
+    /// via <see cref="SettingsVM"/>): Single Report Generator, Whole-Class Reports (batch and rapid
+    /// entry), Compare AI Writing Styles, History Log, and the Welcome overlay. Owns the student
+    /// roster and report history in memory, coordinates report generation through
+    /// <see cref="ReportOrchestratorService"/> and <see cref="SchoolDataOrchestratorService"/>, and
+    /// hosts every teacher-facing feature introduced after the initial release: comment bank, voice
+    /// dictation, read-aloud, simplify/translate utility calls, safeguarding nudges, offline queuing,
+    /// and rapid-fire batch entry.
+    /// </summary>
+    /// <remarks>
+    /// This class has grown large by MVVM standards. It is kept as a single ViewModel deliberately —
+    /// splitting it further would mean either duplicating the shared student roster / history state
+    /// across multiple ViewModels, or introducing a mediator, and neither trade-off was judged worth
+    /// it for an app this size. Related methods are grouped under <c>// --- Section ---</c> comment
+    /// banners to keep the file navigable.
+    /// </remarks>
     public class MainViewModel : ViewModelBase
     {
         private readonly ReportOrchestratorService _orchestrator;
@@ -203,10 +220,14 @@ namespace StudentReportGenerator.Services
             RapidReset();
         }
 
+        /// <summary>Recomputes every figure shown on the Usage Statistics tab (hours saved, token
+        /// estimate, per-provider report counts, running cost, and aggregate insights) from the
+        /// persisted settings. Call after any successful report generation.</summary>
         private void UpdateDashboardMetricsDisplay()
         {
+            // Rough heuristic: assume each generated report saves a teacher about 10 minutes
+            // versus writing it by hand.
             double totalMinutesSaved = _appState.CurrentSettings.TotalReportsGenerated * 10.0;
-            double hoursSaved = totalMinutesSaved / 60.0;
             HoursSavedDisplay = Math.Round(totalMinutesSaved / 60.0, 1).ToString();
             TokensUsedDisplay = _appState.CurrentSettings.TotalTokensEstimated.ToString("N0");
             NvidiaCountDisplay = _appState.CurrentSettings.NvidiaReportsCount.ToString("N0");
@@ -239,6 +260,10 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Handles the "Generate Report" button on the Single Report tab: validates the
+        /// required fields, compiles the attendance/contribution radio-button selections and
+        /// teacher notes into a single notes block, runs the safeguarding scan, then hands off to
+        /// <see cref="ProcessSingleReportExecutionAsync"/> for the actual AI call.</summary>
         private async Task GenerateSingleReportAsync()
         {
             string cleanStudentName = SanitizeControlOutput(SelectedStudentName);
@@ -267,6 +292,21 @@ namespace StudentReportGenerator.Services
             await ProcessSingleReportExecutionAsync(cleanStudentName, compiledNotes, _appState.CurrentSettings.AiProvider, report => GeneratedReportOutput = report);
         }
 
+        /// <summary>
+        /// The single choke point every report generation path funnels through: single reports,
+        /// batch rows, tone previews, and both sides of a side-by-side comparison. Builds the
+        /// <see cref="ReportRequest"/> (including SIS-grounded facts when configured), calls
+        /// <see cref="ReportOrchestratorService.GenerateAsync"/>, records successful default-provider
+        /// generations to history, and translates every failure mode (timeout, provider error,
+        /// unexpected exception) into a friendly message via <paramref name="onCompleteOutput"/>
+        /// rather than letting an exception escape to the caller.
+        /// </summary>
+        /// <param name="managesBusyFlag">When false (used by side-by-side comparison, where two
+        /// calls run concurrently), this call does not toggle <see cref="IsGenerating"/> itself —
+        /// the caller manages a shared busy flag instead, so the two concurrent calls can't race
+        /// each other's flag updates.</param>
+        /// <returns>True on success; false on any failure (including a network timeout that has
+        /// been queued for automatic retry — see <see cref="EnqueueForRetry"/>).</returns>
         private async Task<bool> ProcessSingleReportExecutionAsync(string name, string notes, string provider, Action<string> onCompleteOutput, bool managesBusyFlag = true)
         {
             if (managesBusyFlag) IsGenerating = true;
@@ -420,6 +460,9 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Processes the Whole-Class Reports batch box line-by-line ("Name | Notes"),
+        /// generating one report per line with a short delay between calls to avoid hammering the
+        /// AI provider's rate limits. Cancellable mid-run via <see cref="CancelBatchGeneration"/>.</summary>
         private async Task GenerateBatchAsync()
         {
             if (string.IsNullOrWhiteSpace(BatchDataInput)) return;
@@ -447,12 +490,10 @@ namespace StudentReportGenerator.Services
 
                     StatusText = $"Generating batch card {i + 1} of {lines.Length}...";
 
-                    
                     await ProcessSingleReportExecutionAsync(studentNameClean, studentNotesClean, _appState.CurrentSettings.AiProvider, report =>
                     {
                         GeneratedReportOutput += $"\n\n=========================================\n📝 STUDENT: {studentNameClean.ToUpper()}\n=========================================\n{report}\n";
                     });
-
 
                     if (i < lines.Length - 1 && !token.IsCancellationRequested)
                     {
@@ -476,6 +517,8 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Clears the batch input box after an explicit Yes/No confirmation — a misclick
+        /// here would otherwise discard a teacher's typed notes for an entire class.</summary>
         private void ClearBatchInput()
         {
             if (string.IsNullOrWhiteSpace(BatchDataInput)) return;
@@ -500,6 +543,9 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Runs the same notes through two different providers concurrently (Compare AI
+        /// Writing Styles tab), using the shared <see cref="IsComparing"/> flag rather than
+        /// <see cref="IsGenerating"/> so the two concurrent calls can't race each other's busy state.</summary>
         private async Task RunSideBySideComparisonAsync()
         {
             if (string.IsNullOrWhiteSpace(CompareStudentName) || string.IsNullOrWhiteSpace(CompareNotes)) return;
@@ -626,7 +672,39 @@ namespace StudentReportGenerator.Services
             }
         }
 
-        private void SaveStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase)); if (match == null) { _studentDatabase.Add(new StudentProfile { FullName = clean, ClassName = StudentClass, ParentEmail = ParentEmail, TargetGrade = TargetGrade, SupportNeeds = SupportNeeds }); } else { match.ClassName = StudentClass; match.ParentEmail = ParentEmail; match.TargetGrade = TargetGrade; match.SupportNeeds = SupportNeeds; } StudentDatabaseService.SaveStudents(_studentDatabase); RefreshCollections(); StatusText = "Profile saved."; }
+        /// <summary>Adds a new student profile, or updates the existing one if the name already
+        /// matches (case-insensitive), then persists the roster and refreshes bound collections.</summary>
+        private void SaveStudent()
+        {
+            string clean = SanitizeControlOutput(SelectedStudentName);
+            if (string.IsNullOrEmpty(clean)) return;
+
+            var match = _studentDatabase.FirstOrDefault(x => x.FullName.Equals(clean, StringComparison.OrdinalIgnoreCase));
+            if (match == null)
+            {
+                _studentDatabase.Add(new StudentProfile
+                {
+                    FullName = clean,
+                    ClassName = StudentClass,
+                    ParentEmail = ParentEmail,
+                    TargetGrade = TargetGrade,
+                    SupportNeeds = SupportNeeds
+                });
+            }
+            else
+            {
+                match.ClassName = StudentClass;
+                match.ParentEmail = ParentEmail;
+                match.TargetGrade = TargetGrade;
+                match.SupportNeeds = SupportNeeds;
+            }
+
+            StudentDatabaseService.SaveStudents(_studentDatabase);
+            RefreshCollections();
+            StatusText = "Profile saved.";
+        }
+
+        /// <summary>Permanently removes a student profile after an explicit Yes/No confirmation.</summary>
         private void DeleteStudent()
         {
             if (string.IsNullOrWhiteSpace(SelectedStudentName)) return;
@@ -644,8 +722,18 @@ namespace StudentReportGenerator.Services
                 }
             }
         }
-        private void EnterApplication() { IsWelcomeOverlayVisible = false; }
-        private void EditWelcomeProfile() { IsWelcomeBackVisible = false; IsProfileSetupVisible = true; SelectedNavigationIndex = 3; }
+        /// <summary>Dismisses the first-run Welcome overlay.</summary>
+        private void EnterApplication() => IsWelcomeOverlayVisible = false;
+
+        /// <summary>From the "Welcome back" overlay state, jumps straight to the Profile &amp;
+        /// Branding tab so the teacher can edit their signature/school details.</summary>
+        private void EditWelcomeProfile()
+        {
+            IsWelcomeBackVisible = false;
+            IsProfileSetupVisible = true;
+            SelectedNavigationIndex = 3;
+        }
+
         private async void CopyReportToClipboard()
         {
             try
@@ -663,6 +751,8 @@ namespace StudentReportGenerator.Services
                 StatusText = "Could not access clipboard.";
             }
         }
+        /// <summary>Builds a <see cref="SchoolBranding"/> snapshot from the current settings, for
+        /// stamping a letterhead onto Word/PDF exports.</summary>
         private SchoolBranding CurrentBranding() => new SchoolBranding
         {
             SchoolName = _appState.CurrentSettings.SchoolName,
@@ -670,23 +760,86 @@ namespace StudentReportGenerator.Services
             AccentColorHex = _appState.CurrentSettings.ThemeColorHex
         };
 
-        private void SaveAsWord() { if (!ConfirmUneditedDraft()) return; var d = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" }; if (d.ShowDialog() == true) WordExportService.ExportSingle(d.FileName, SanitizeControlOutput(SelectedStudentName), WithDisclosure(GeneratedReportOutput), CurrentBranding()); }
-        private void SaveAsPdf() { if (!ConfirmUneditedDraft()) return; var d = new Microsoft.Win32.SaveFileDialog { Filter = "PDF (*.pdf)|*.pdf" }; if (d.ShowDialog() == true) PdfExportService.ExportSingle(d.FileName, SanitizeControlOutput(SelectedStudentName), WithDisclosure(GeneratedReportOutput), CurrentBranding()); }
+        /// <summary>Exports the current report preview as a branded Word document, after checking
+        /// the teacher has personalised an unedited AI draft.</summary>
+        private void SaveAsWord()
+        {
+            if (!ConfirmUneditedDraft()) return;
+            var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" };
+            if (dialog.ShowDialog() == true)
+                WordExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), WithDisclosure(GeneratedReportOutput), CurrentBranding());
+        }
+
+        /// <summary>Exports the current report preview as a branded PDF, after checking the teacher
+        /// has personalised an unedited AI draft.</summary>
+        private void SaveAsPdf()
+        {
+            if (!ConfirmUneditedDraft()) return;
+            var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "PDF (*.pdf)|*.pdf" };
+            if (dialog.ShowDialog() == true)
+                PdfExportService.ExportSingle(dialog.FileName, SanitizeControlOutput(SelectedStudentName), WithDisclosure(GeneratedReportOutput), CurrentBranding());
+        }
+
+        /// <summary>Exports the entire History Log to a single branded Word document, one student per page.</summary>
         private void ExportBatchWord()
         {
             if (SessionHistory.Count == 0) return;
-            var d = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" };
-            if (d.ShowDialog() != true) return;
+            var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Word (*.docx)|*.docx" };
+            if (dialog.ShowDialog() != true) return;
+
             var records = SessionHistory
                 .Select(r => new SessionRecord { StudentName = r.StudentName, GeneratedReport = WithDisclosure(r.GeneratedReport), Timestamp = r.Timestamp })
                 .ToList();
-            WordExportService.ExportBatch(d.FileName, records, CurrentBranding());
+            WordExportService.ExportBatch(dialog.FileName, records, CurrentBranding());
         }
-        private void FilterHistoryByStudent() { string clean = SanitizeControlOutput(SelectedStudentName); if (string.IsNullOrEmpty(clean)) return; SessionHistory = new ObservableCollection<SessionRecord>(HistoryDatabaseService.LoadHistory().Where(x => x.StudentName.Contains(clean, StringComparison.OrdinalIgnoreCase)).ToList()); }
-        private void ClearHistoryFilter() { SessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>(); }
-        private void SaveCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && !_appState.CurrentSettings.CurriculumTopics.Contains(clean)) { _appState.CurrentSettings.CurriculumTopics.Add(clean); _appState.SaveSettings(); OnPropertyChanged(nameof(CurriculumTopics)); } }
-        private void DeleteCurriculumTopic() { string clean = SanitizeControlOutput(SelectedCurriculumTopic); if (!string.IsNullOrEmpty(clean) && _appState.CurrentSettings.CurriculumTopics.Contains(clean)) { _appState.CurrentSettings.CurriculumTopics.Remove(clean); _appState.SaveSettings(); OnPropertyChanged(nameof(CurriculumTopics)); } }
-        private void CopyHistoryPreviewToCompareBox() { IsCompareRightVisible = true; if (SelectedHistoryItem != null) CompareOutputRight = SelectedHistoryItem.GeneratedReport; }
+
+        /// <summary>Filters the visible History Log down to records for one student (triggered by
+        /// "View History" on the Single Report tab). Use <see cref="ClearHistoryFilter"/> to undo.</summary>
+        private void FilterHistoryByStudent()
+        {
+            string clean = SanitizeControlOutput(SelectedStudentName);
+            if (string.IsNullOrEmpty(clean)) return;
+            SessionHistory = new ObservableCollection<SessionRecord>(
+                HistoryDatabaseService.LoadHistory().Where(x => x.StudentName.Contains(clean, StringComparison.OrdinalIgnoreCase)).ToList());
+        }
+
+        /// <summary>Reloads the full, unfiltered History Log from disk.</summary>
+        private void ClearHistoryFilter()
+        {
+            SessionHistory = HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>();
+        }
+
+        /// <summary>Adds the currently entered curriculum topic to the teacher's saved list, if not already present.</summary>
+        private void SaveCurriculumTopic()
+        {
+            string clean = SanitizeControlOutput(SelectedCurriculumTopic);
+            if (string.IsNullOrEmpty(clean) || _appState.CurrentSettings.CurriculumTopics.Contains(clean)) return;
+
+            _appState.CurrentSettings.CurriculumTopics.Add(clean);
+            _appState.SaveSettings();
+            OnPropertyChanged(nameof(CurriculumTopics));
+        }
+
+        /// <summary>Removes the currently entered curriculum topic from the teacher's saved list.</summary>
+        private void DeleteCurriculumTopic()
+        {
+            string clean = SanitizeControlOutput(SelectedCurriculumTopic);
+            if (string.IsNullOrEmpty(clean) || !_appState.CurrentSettings.CurriculumTopics.Contains(clean)) return;
+
+            _appState.CurrentSettings.CurriculumTopics.Remove(clean);
+            _appState.SaveSettings();
+            OnPropertyChanged(nameof(CurriculumTopics));
+        }
+
+        /// <summary>Copies the selected History Log entry's report into the right-hand Compare pane,
+        /// so a teacher can compare an old report against a freshly generated one.</summary>
+        private void CopyHistoryPreviewToCompareBox()
+        {
+            IsCompareRightVisible = true;
+            if (SelectedHistoryItem != null) CompareOutputRight = SelectedHistoryItem.GeneratedReport;
+        }
+
+        // --- Bindable properties (Single Report, History, Compare, Welcome overlay) ---
 
         public ObservableCollection<SessionRecord> SessionHistory { get => _sessionHistory; set { if (SetProperty(ref _sessionHistory, value)) AttachHistorySearchFilter(); } }
         public ObservableCollection<string> StudentNames { get => _studentNames; set => SetProperty(ref _studentNames, value); }
@@ -805,6 +958,8 @@ namespace StudentReportGenerator.Services
         }
         public string AboutInfo => $"FacultyFlow AI • {AppVersionDisplay}";
 
+        /// <summary>Bound to the History Log search box. Setting this re-runs the
+        /// <see cref="CollectionViewSource"/> filter attached in <see cref="AttachHistorySearchFilter"/>.</summary>
         private string _historySearchText = string.Empty;
         public string HistorySearchText
         {
@@ -818,7 +973,11 @@ namespace StudentReportGenerator.Services
             }
         }
 
-        // ===================== NEW FEATURE STATE =====================
+        // ===================== Feature state added post-launch =====================
+        // Backing fields and commands for: comment bank, voice dictation/read-aloud, draft version
+        // history, AI disclosure, safeguarding nudge, simplify/translate/tone-audit utility calls,
+        // rapid-fire batch entry, the offline retry queue, and term-over-term continuity.
+
         private readonly SpeechService _speech = new SpeechService();
         private List<string> _commentBankPhrases = new List<string>();
         private ObservableCollection<string> _visibleCommentBank = new ObservableCollection<string>();
@@ -833,6 +992,10 @@ namespace StudentReportGenerator.Services
         private readonly List<QueuedReport> _offlineQueue = new List<QueuedReport>();
         private static readonly string QueueFilePath = FileSandboxService.GetSafeFilePath("queued_reports.json");
 
+        /// <summary>A single report generation request that timed out and is waiting to be retried
+        /// automatically once connectivity returns. Persisted as plain JSON in <see cref="QueueFilePath"/>
+        /// so queued reports survive an app restart — deliberately unencrypted since teacher notes are
+        /// already visible in the Whole-Class batch box in the same way.</summary>
         public class QueuedReport
         {
             public string StudentName { get; set; } = string.Empty;
@@ -857,11 +1020,15 @@ namespace StudentReportGenerator.Services
         public bool HasQueuedReports => _offlineQueue.Count > 0;
 
         // --- Comment bank ---
+
+        /// <summary>Re-applies the current filter text to the full phrase list, refreshing <see cref="VisibleCommentBank"/>.</summary>
         private void RefreshCommentBank()
         {
             VisibleCommentBank = new ObservableCollection<string>(CommentBankService.Suggest(_commentBankPhrases, CommentFilterText));
         }
 
+        /// <summary>Appends a saved phrase onto the end of the Teacher Observations text, adding a
+        /// separating space if there's already text there.</summary>
         private void InsertPhrase(string? phrase)
         {
             if (string.IsNullOrWhiteSpace(phrase)) return;
@@ -869,6 +1036,7 @@ namespace StudentReportGenerator.Services
             CustomNotes = string.IsNullOrEmpty(current) ? phrase : $"{current} {phrase}";
         }
 
+        /// <summary>Saves the text currently typed in the "new phrase" box to the comment bank.</summary>
         private void AddPhraseToBank()
         {
             _commentBankPhrases.Add(NewPhraseText.Trim());
@@ -878,6 +1046,7 @@ namespace StudentReportGenerator.Services
             RefreshCommentBank();
         }
 
+        /// <summary>Removes a phrase from the comment bank (case-insensitive match).</summary>
         private void DeletePhraseFromBank(string? phrase)
         {
             if (string.IsNullOrWhiteSpace(phrase)) return;
@@ -887,6 +1056,10 @@ namespace StudentReportGenerator.Services
         }
 
         // --- Voice notes (on-device dictation) ---
+
+        /// <summary>Starts or stops microphone dictation into the Teacher Observations field,
+        /// via <see cref="SpeechService"/>. Shows a friendly status message if no microphone/speech
+        /// engine is available rather than failing silently.</summary>
         private void ToggleDictation()
         {
             if (_speech.IsDictating)
@@ -906,6 +1079,9 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Handles a recognized phrase from <see cref="SpeechService.TextRecognized"/>,
+        /// which fires on a background thread — must marshal to the UI thread via
+        /// <see cref="System.Windows.Threading.Dispatcher"/> before touching any bound property.</summary>
         private void OnDictationText(string text)
         {
             System.Windows.Application.Current?.Dispatcher.Invoke(() =>
@@ -916,11 +1092,18 @@ namespace StudentReportGenerator.Services
         }
 
         // --- Version history / restore ---
+
+        /// <summary>Discards any edits the teacher has made and reverts the preview to the AI's
+        /// original, unedited draft from the most recent generation.</summary>
         private void RestoreAiDraft()
         {
             if (!string.IsNullOrWhiteSpace(_lastAiDraft)) GeneratedReportOutput = _lastAiDraft;
         }
 
+        /// <summary>Personalisation nudge: if the teacher is about to export/email a report that's
+        /// still word-for-word identical to the raw AI output, asks for explicit confirmation first
+        /// (parents value a teacher's own voice — see the Education Sector Suggestions doc).</summary>
+        /// <returns>True if it's fine to proceed (either the draft has been edited, or the teacher confirmed anyway).</returns>
         private bool ConfirmUneditedDraft()
         {
             if (!string.IsNullOrWhiteSpace(_lastAiDraft) && GeneratedReportOutput == _lastAiDraft)
@@ -935,6 +1118,10 @@ namespace StudentReportGenerator.Services
         }
 
         // --- AI disclosure ---
+
+        /// <summary>Appends a plain-language "drafted with AI assistance" disclosure line to a
+        /// report before it's exported or emailed, if the teacher has that setting enabled
+        /// (on by default) — see <c>AppSettings.AppendAiDisclosure</c>.</summary>
         private string WithDisclosure(string report)
         {
             if (!_appState.CurrentSettings.AppendAiDisclosure || string.IsNullOrWhiteSpace(report)) return report;
@@ -944,6 +1131,11 @@ namespace StudentReportGenerator.Services
         }
 
         // --- Safeguarding nudge ---
+
+        /// <summary>Scans teacher notes for safeguarding-related keywords via
+        /// <see cref="SafeguardingScanService"/> and, if any are found, reminds the teacher to use
+        /// the school's proper referral process. Never blocks report generation — this is a nudge,
+        /// not a gate.</summary>
         private void RunSafeguardingScan(string notes)
         {
             if (!_appState.CurrentSettings.EnableSafeguardingPrompt) return;
@@ -961,6 +1153,13 @@ namespace StudentReportGenerator.Services
         }
 
         // --- Utility AI calls (simplify / translate / tone audit) ---
+
+        /// <summary>
+        /// Shared implementation behind "Simplify for Parents", "Translate", and "Audit Tone
+        /// Balance": issues a one-off <see cref="ReportRequest.UtilityInstruction"/> call (which
+        /// bypasses normal report framing — see <see cref="PromptBuilderService"/>) and shows the
+        /// result in the right-hand Compare pane alongside the original.
+        /// </summary>
         private async Task RunUtilityAsync(string instruction, string content, string statusLabel, string resultHeader)
         {
             if (string.IsNullOrWhiteSpace(content)) return;
@@ -987,6 +1186,9 @@ namespace StudentReportGenerator.Services
         }
 
         // --- Rapid-fire whole-class entry ---
+
+        /// <summary>Appends the current rapid-entry notes as a new "Name | Notes" line onto the
+        /// batch input, then advances to the next student on the roster.</summary>
         private void RapidCommitAndAdvance()
         {
             if (!string.IsNullOrWhiteSpace(RapidNotes))
@@ -997,6 +1199,8 @@ namespace StudentReportGenerator.Services
             RapidAdvance();
         }
 
+        /// <summary>Moves the rapid-entry cursor to the next student without committing any notes
+        /// (used both after a commit and by the explicit "Skip Student" action).</summary>
         private void RapidAdvance()
         {
             RapidNotes = string.Empty;
@@ -1005,6 +1209,8 @@ namespace StudentReportGenerator.Services
             OnPropertyChanged(nameof(RapidProgressDisplay));
         }
 
+        /// <summary>Resets the rapid-entry cursor back to the first student — called whenever the
+        /// roster changes (import, save, delete) so the index can't point past the new list.</summary>
         private void RapidReset()
         {
             _rapidIndex = 0;
@@ -1014,6 +1220,10 @@ namespace StudentReportGenerator.Services
         }
 
         // --- Offline queue ---
+        // Supports "offline drafting": if generation fails due to connectivity, the request is
+        // queued to disk and retried automatically the moment Windows reports the network is back.
+
+        /// <summary>Loads any reports queued from a previous session (e.g. the app was closed while offline).</summary>
         private void LoadOfflineQueue()
         {
             try
@@ -1024,18 +1234,30 @@ namespace StudentReportGenerator.Services
                     if (queued != null) _offlineQueue.AddRange(queued);
                 }
             }
-            catch { }
+            catch
+            {
+                // Corrupt or unreadable queue file — start with an empty queue rather than crash on startup.
+            }
             OnPropertyChanged(nameof(QueuedCountDisplay));
             OnPropertyChanged(nameof(HasQueuedReports));
         }
 
+        /// <summary>Persists the current offline queue to disk (plain JSON — see <see cref="QueuedReport"/>).</summary>
         private void SaveOfflineQueue()
         {
-            try { File.WriteAllText(QueueFilePath, System.Text.Json.JsonSerializer.Serialize(_offlineQueue)); } catch { }
+            try
+            {
+                File.WriteAllText(QueueFilePath, System.Text.Json.JsonSerializer.Serialize(_offlineQueue));
+            }
+            catch
+            {
+                // Best-effort persistence only; a failed save just means the queue won't survive a restart.
+            }
             OnPropertyChanged(nameof(QueuedCountDisplay));
             OnPropertyChanged(nameof(HasQueuedReports));
         }
 
+        /// <summary>Adds a failed (timed-out) request to the retry queue, skipping duplicates.</summary>
         private void EnqueueForRetry(string studentName, string notes)
         {
             if (_offlineQueue.Any(q => q.StudentName == studentName && q.Notes == notes)) return;
@@ -1043,6 +1265,9 @@ namespace StudentReportGenerator.Services
             SaveOfflineQueue();
         }
 
+        /// <summary>Attempts every queued report in order, stopping at the first one that still
+        /// fails (connectivity is presumably still down) so the remainder stay queued rather than
+        /// all failing individually in a tight loop.</summary>
         private async Task RetryQueuedReportsAsync()
         {
             var pending = _offlineQueue.ToList();
@@ -1058,6 +1283,8 @@ namespace StudentReportGenerator.Services
             StatusText = _offlineQueue.Count == 0 ? "Queued reports completed." : "Some reports are still queued.";
         }
 
+        /// <summary>Windows network-status callback: the moment connectivity is reported as
+        /// available again, automatically retries anything sitting in the offline queue.</summary>
         private void OnNetworkAvailabilityChanged(object? sender, System.Net.NetworkInformation.NetworkAvailabilityEventArgs e)
         {
             if (e.IsAvailable && _offlineQueue.Count > 0)
@@ -1070,6 +1297,10 @@ namespace StudentReportGenerator.Services
         }
 
         // --- Term-over-term continuity ---
+
+        /// <summary>Finds the most recent previously generated report for the selected student
+        /// (if any) and shows it alongside the blank form, so a teacher doesn't accidentally write
+        /// something that contradicts or near-duplicates what they said last time.</summary>
         private void UpdateLastTermPreview(string studentName)
         {
             var previous = (HistoryDatabaseService.LoadHistory() ?? new ObservableCollection<SessionRecord>())
@@ -1081,11 +1312,15 @@ namespace StudentReportGenerator.Services
                 : $"Previous report ({previous.Timestamp:d MMM yyyy}):\n\n{previous.GeneratedReport}";
         }
 
+        /// <summary>Wires up the History Log's live search: must be re-attached every time
+        /// <see cref="SessionHistory"/> is replaced with a new collection instance, since
+        /// <see cref="System.Windows.Data.CollectionViewSource"/> filters are per-view, not per-collection.</summary>
         private void AttachHistorySearchFilter()
         {
             System.Windows.Data.CollectionViewSource.GetDefaultView(SessionHistory).Filter = MatchesHistorySearch;
         }
 
+        /// <summary>Predicate for the History Log filter: matches on student name or report body, case-insensitive.</summary>
         private bool MatchesHistorySearch(object item)
         {
             if (string.IsNullOrWhiteSpace(HistorySearchText)) return true;

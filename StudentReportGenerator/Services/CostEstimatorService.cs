@@ -2,17 +2,27 @@ using System;
 
 namespace StudentReportGenerator.Services
 {
-    // Translates token counts into an approximate running cost, because nobody making a
-    // school purchasing decision thinks in tokens. Deliberately rough: blended per-million-token
-    // rates for the default model tier of each provider, clearly labelled as an estimate.
+    /// <summary>
+    /// Translates the running token count into an approximate running cost, because nobody making
+    /// a school purchasing decision thinks in tokens. Deliberately rough: uses blended per-million-
+    /// token rates for the default model tier of each provider rather than exact per-model pricing,
+    /// and the output is explicitly labelled as an estimate rather than an invoice-grade figure.
+    /// </summary>
     public static class CostEstimatorService
     {
-        // Approximate blended (input+output) USD per 1M tokens, mid-2026 list prices
+        // Approximate blended (input+output) USD per 1M tokens, mid-2026 list prices.
+        // Update these constants if a provider's list pricing changes materially.
         private const double NvidiaRate = 0.00;   // NIM free tier
         private const double GeminiRate = 1.00;   // Gemini 2.5 Flash class
         private const double OpenAiRate = 0.60;   // GPT-4o mini class
         private const double ClaudeRate = 2.00;   // Claude Haiku class
 
+        /// <summary>
+        /// Distributes the total estimated token count proportionally across providers by their
+        /// share of total reports generated, then applies each provider's rate. This is an
+        /// approximation (it assumes similar average report length per provider) rather than exact
+        /// per-provider token tracking, which the app does not currently record separately.
+        /// </summary>
         public static string EstimateCostSummary(long totalTokens, int nvidiaReports, int geminiReports, int openAiReports, int claudeReports)
         {
             int totalReports = nvidiaReports + geminiReports + openAiReports + claudeReports;

@@ -5,6 +5,8 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
+    /// <summary>Anthropic Claude provider. Talks to the Messages API; only <see cref="BuildRequest"/>
+    /// and <see cref="ParseResponse"/> are provider-specific — retry/timeout handling lives in <see cref="BaseAiService"/>.</summary>
     public class ClaudeReportService : BaseAiService
     {
         public ClaudeReportService(HttpClient httpClient, string apiKey) : base(httpClient, apiKey) { }

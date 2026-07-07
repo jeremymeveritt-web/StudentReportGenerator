@@ -11,6 +11,13 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
+    /// <summary>
+    /// Backs the entire Settings surface of the app: profile/branding, SMTP email configuration,
+    /// AI provider &amp; API key management, master-password protected vault, theme (light/dark),
+    /// accessibility preferences, school-data (SIS) connection settings, and the shared framework
+    /// library import/export. Exposed to the view via <c>MainViewModel.SettingsVM</c> so both
+    /// ViewModels share the same <see cref="AppStateService"/>-backed settings.
+    /// </summary>
     public class SettingsViewModel : ViewModelBase
     {
         private readonly AppStateService _appState;
@@ -49,7 +56,6 @@ namespace StudentReportGenerator.Services
         public ICommand PurgeSisCacheCommand { get; }
         public ICommand SyncNowCommand { get; }
 
-
         public SettingsViewModel(AppStateService appState)
         {
             _appState = appState;
@@ -64,10 +70,14 @@ namespace StudentReportGenerator.Services
             PurgeSisCacheCommand = new RelayCommand(_ => PurgeSisCache());
             SyncNowCommand = new RelayCommand(_ => SyncNow());
 
-
-
             InitializeSettings();
         }
+
+        /// <summary>
+        /// "Test Connection" handler: makes a lightweight, read-only call to the selected
+        /// provider's API (list models, or a minimal POST-endpoint probe for Claude) purely to
+        /// confirm the pasted API key is accepted, without spending tokens generating a report.
+        /// </summary>
         private async void TestApiKey()
         {
             FlushCurrentApiKey();
@@ -116,6 +126,8 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Populates every bindable property from the persisted <see cref="AppSettings"/>
+        /// when the ViewModel is constructed (i.e. once, at app startup).</summary>
         private void InitializeSettings()
         {
             var settings = _appState.CurrentSettings;
@@ -136,6 +148,13 @@ namespace StudentReportGenerator.Services
             EvaluateAiProviderOptions(settings.AiProvider);
         }
 
+        /// <summary>
+        /// Persists the Profile &amp; Branding and AI Provider tabs. The master password is
+        /// deliberately hashed with <see cref="CryptoService.HashPassword"/> (one-way) here, never
+        /// encrypted with <see cref="CryptoService.EncryptSecret"/> — mixing those two up was the
+        /// bug that used to permanently lock teachers out of Settings. See
+        /// StudentReportGenerator.Tests.CryptoServiceTests for the regression test.
+        /// </summary>
         private void SaveProfileSettings()
         {
             _appState.CurrentSettings.SchoolName = SettingsSchoolName;
@@ -153,6 +172,8 @@ namespace StudentReportGenerator.Services
             System.Windows.MessageBox.Show("Configuration updated successfully.", "Saved", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
         }
 
+        /// <summary>Attempts to unlock the Settings vault using the entered password. If no master
+        /// password has ever been set, Settings are unlocked unconditionally (nothing to protect yet).</summary>
         private void UnlockSettings()
         {
             if (string.IsNullOrEmpty(_appState.CurrentSettings.MasterPassword))
@@ -172,6 +193,12 @@ namespace StudentReportGenerator.Services
                 SettingsUnlockPassword = string.Empty;
             }
         }
+        /// <summary>
+        /// Encrypts and saves whatever API key is currently held in the (plaintext, in-memory only)
+        /// <see cref="DynamicApiKeyPassword"/> field back into the correct provider-specific settings
+        /// field. Called before switching providers or saving settings, so a key the teacher just
+        /// typed is never lost when the active provider changes.
+        /// </summary>
         private void FlushCurrentApiKey()
         {
             if (string.IsNullOrEmpty(_appState.CurrentSettings.AiProvider)) return;
@@ -187,6 +214,13 @@ namespace StudentReportGenerator.Services
             _appState.SaveSettings();
         }
 
+        /// <summary>
+        /// Rebuilds <see cref="ModelTierOptions"/> and loads the correct decrypted API key for the
+        /// newly selected provider. Note: the four <c>if/else if</c> branches below intentionally
+        /// mirror the equivalent switch in <see cref="AiServiceFactory.Create"/> — this is UI-side
+        /// bookkeeping (which key/model-tier fields to show), while the factory does the actual
+        /// runtime provider selection for report generation.
+        /// </summary>
         private void EvaluateAiProviderOptions(string provider)
         {
             FlushCurrentApiKey();
@@ -228,6 +262,8 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Applies the school's saved accent colour, title, and logo to the UI.
+        /// Called on startup and whenever the teacher changes any branding setting.</summary>
         private void ApplyBrandingConfiguration()
         {
             if (!string.IsNullOrWhiteSpace(_appState.CurrentSettings.ThemeColorHex))
@@ -263,12 +299,13 @@ namespace StudentReportGenerator.Services
             else { IsLogoVisible = false; }
         }
 
+        /// <summary>Lets the teacher pick a logo image, clones it into the app's sandboxed
+        /// AppData folder (so it survives the original file being moved/deleted), and applies it.</summary>
         private void UploadLogo()
         {
             var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Images (*.png;*.jpg)|*.png;*.jpg" };
             if (dialog.ShowDialog() == true)
             {
-               
                 string extension = Path.GetExtension(dialog.FileName);
                 string clonedPath = FileSandboxService.CloneAssetToSandbox(dialog.FileName, $"school_logo{extension}");
 
@@ -278,6 +315,8 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Adds a new named tone/style template to the teacher's saved list, if both a
+        /// name and instruction have been entered.</summary>
         private void AddCustomFrameworkTemplate()
         {
             if (!string.IsNullOrWhiteSpace(SettingsNewFrameworkName) && !string.IsNullOrWhiteSpace(SettingsNewFrameworkInstruction))
@@ -290,6 +329,8 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Wraps a plaintext string in a read-only <see cref="SecureString"/> so it's not
+        /// held as a plain managed string in memory for longer than necessary.</summary>
         private SecureString ConvertToSecureString(string text)
         {
             var secure = new SecureString();
@@ -299,6 +340,8 @@ namespace StudentReportGenerator.Services
             return secure;
         }
 
+        /// <summary>Reverses <see cref="ConvertToSecureString"/> only when the plaintext value is
+        /// actually needed (e.g. immediately before DPAPI-encrypting for storage).</summary>
         private string ConvertToPlainString(SecureString secure)
         {
             if (secure == null || secure.Length == 0) return string.Empty;
@@ -432,6 +475,9 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Pushes the current font family/size choice into the app-wide
+        /// <c>AppFontFamily</c>/<c>AppFontSize</c> dynamic resources declared in App.xaml, which
+        /// every window and control in the app binds its <c>FontFamily</c>/<c>FontSize</c> to.</summary>
         private void ApplyFontPreferences()
         {
             var res = System.Windows.Application.Current.Resources;
@@ -511,6 +557,8 @@ namespace StudentReportGenerator.Services
             ? $"Last synced: {_appState.CurrentSettings.LastSisSyncUtc.Value.ToLocalTime():g}"
             : "Never synced (no SIS connection configured).";
 
+        /// <summary>Manual "Sync Now" trigger for the School Connection tab. Placeholder timestamp
+        /// update until a real SIS connector (Wonde/OneRoster) is wired up — see <see cref="SchoolDataOrchestratorService"/>.</summary>
         private void SyncNow()
         {
             if (_appState.CurrentSettings.SchoolDataProvider == "Manual Entry")
@@ -523,6 +571,8 @@ namespace StudentReportGenerator.Services
             OnPropertyChanged(nameof(LastSisSyncDisplay));
         }
 
+        /// <summary>Lets a school's data lead wipe all locally cached SIS data on demand, after
+        /// an explicit confirmation — a data-minimisation control from the Integration Plan.</summary>
         private void PurgeSisCache()
         {
             if (MessageBox.Show("Delete all locally cached school data (attendance, behaviour, grades)? Reports will fall back to manual entry until the next sync.", "Purge Cached School Data", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
@@ -533,6 +583,9 @@ namespace StudentReportGenerator.Services
         }
 
         // --- Shared library (HoD/SLT publish once, teachers import) ---
+
+        /// <summary>Exports the teacher's writing styles and curriculum topics to a JSON file,
+        /// for sharing with the rest of a department. See <see cref="FrameworkShareService"/>.</summary>
         private void ExportSharedLibrary()
         {
             var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "FacultyFlow Library (*.json)|*.json", FileName = "facultyflow-library.json" };
@@ -543,6 +596,8 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Imports a colleague's shared library file, merging (not replacing) it into the
+        /// teacher's own writing styles and curriculum topics.</summary>
         private void ImportSharedLibrary()
         {
             var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "FacultyFlow Library (*.json)|*.json" };
@@ -577,7 +632,9 @@ namespace StudentReportGenerator.Services
             }
         }
 
-        // Every key in App.xaml must appear in BOTH palettes so Dark Mode swaps the full theme.
+        // Light/dark colour palettes for the whole app's theme resources. Every key declared in
+        // App.xaml MUST have an entry in both dictionaries below, or Dark Mode will leave that
+        // element showing its (wrong) hardcoded XAML default when toggled.
         private static readonly System.Collections.Generic.Dictionary<string, string> LightPalette = new()
         {
             ["ThemeAppBg"] = "#FFFAFAFA",
@@ -654,6 +711,10 @@ namespace StudentReportGenerator.Services
             ["ThemeMetricClaudeText"] = "#FFFFCC80",
         };
 
+        /// <summary>Overwrites every theme <see cref="SolidColorBrush"/> resource in
+        /// <c>Application.Current.Resources</c> with the chosen palette. Because every themed
+        /// control in the app binds via <c>DynamicResource</c> (not <c>StaticResource</c>), this
+        /// single call is enough to re-theme the entire UI instantly, with no window reload.</summary>
         private void ApplyTheme(bool isDark)
         {
             var palette = isDark ? DarkPalette : LightPalette;

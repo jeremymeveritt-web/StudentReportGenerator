@@ -4,8 +4,25 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
+    /// <summary>
+    /// Assembles the final prompt text sent to whichever AI provider is active. Centralising prompt
+    /// construction here (rather than in each provider class) means every provider gets identical
+    /// instructions, the same "quarantined" data wrapping (see below), and the same safety rules,
+    /// regardless of which of the four APIs ultimately receives it.
+    /// </summary>
     public static class PromptBuilderService
     {
+        /// <summary>
+        /// Builds either a full report-generation prompt or, when <see cref="ReportRequest.UtilityInstruction"/>
+        /// is set, a one-off utility prompt (used for "Simplify for Parents", "Translate", and the
+        /// tone-balance audit) that bypasses all report framing entirely.
+        /// </summary>
+        /// <remarks>
+        /// Student-identifying data (name, subject, grade, support needs, teacher notes, and any
+        /// SIS-verified facts) is wrapped in an <c>&lt;student_data&gt;</c> tag. This is a prompt-injection
+        /// mitigation: instructions embedded in free-text teacher notes are less likely to be
+        /// interpreted as commands by the model when clearly demarcated as data rather than instructions.
+        /// </remarks>
         public static string BuildSecurePrompt(ReportRequest request)
         {
             // Utility mode: simplify/translate/tone-audit calls bypass the report framing

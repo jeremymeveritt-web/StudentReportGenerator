@@ -4,10 +4,17 @@ using System.Linq;
 
 namespace StudentReportGenerator.Services
 {
-    // Lightweight keyword screen over teacher-typed notes. If an observation looks like it
-    // may be a safeguarding disclosure, the teacher is reminded to use the school's proper
-    // referral route (e.g. CPOMS) — report-writing input is never the right channel for that.
-    // Deliberately conservative: it nudges, it never blocks, and it never sends anything anywhere.
+    /// <summary>
+    /// Lightweight keyword screen over teacher-typed notes. If an observation looks like it may be
+    /// a safeguarding disclosure, the teacher is reminded to use the school's proper referral route
+    /// (e.g. CPOMS) — report-writing input is never the right channel for that.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately conservative and dumb by design: it only ever nudges the teacher (see
+    /// <c>MainViewModel.RunSafeguardingScan</c>), never blocks report generation, and never sends
+    /// anything anywhere itself. A false positive costs one extra dialog box; a false negative is
+    /// the far more serious failure mode this exists to reduce.
+    /// </remarks>
     public static class SafeguardingScanService
     {
         private static readonly string[] Keywords =
@@ -19,6 +26,8 @@ namespace StudentReportGenerator.Services
             "touched inappropriately", "inappropriate touching", "cpoms", "child protection"
         };
 
+        /// <summary>Returns every keyword found in <paramref name="notes"/> (case-insensitive),
+        /// or an empty list if none matched or the input was null/blank.</summary>
         public static IReadOnlyList<string> Scan(string? notes)
         {
             if (string.IsNullOrWhiteSpace(notes)) return Array.Empty<string>();

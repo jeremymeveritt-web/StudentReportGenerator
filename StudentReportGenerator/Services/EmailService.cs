@@ -7,6 +7,11 @@ using System.Threading.Tasks;
 
 namespace StudentReportGenerator.Services
 {
+    /// <summary>
+    /// Sends the generated report directly to a parent by SMTP, using the teacher's own school
+    /// email account and app password (configured in Settings). No third-party mail relay is
+    /// involved — the app connects straight to the SMTP server the teacher provides.
+    /// </summary>
     public static class EmailService
     {
         private const int SmtpTimeoutMs = 30_000;
@@ -78,6 +83,9 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Convenience overload accepting a plaintext password (e.g. immediately after
+        /// decrypting it with <see cref="CryptoService.DecryptSecret"/>); wraps it in a
+        /// short-lived <see cref="SecureString"/> before delegating to the main overload.</summary>
         public static Task<bool> SendEmailAsync(
             string toEmail,
             string subject,

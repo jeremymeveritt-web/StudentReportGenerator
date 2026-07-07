@@ -9,15 +9,20 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
-    // Encrypted local cache of last-synced SIS stats, so reports still generate when the
-    // school's SIS or aggregator is briefly unreachable. Same DPAPI pattern as the
-    // settings/history services. Entries older than the configured retention window are
-    // purged on load (data minimisation: never keep SIS data indefinitely).
+    /// <summary>
+    /// Encrypted local cache of last-synced SIS/MIS stats, keyed by external student ID, so reports
+    /// still generate (using slightly stale data) when the school's SIS or aggregator is briefly
+    /// unreachable. Uses the same DPAPI pattern as the settings/history services. Entries older
+    /// than the school's configured retention window are purged on every load — a data-minimisation
+    /// requirement from the School Data Integration Plan: never keep SIS data indefinitely.
+    /// </summary>
     public static class SchoolDataCacheService
     {
         private static readonly string FilePath = FileSandboxService.GetSafeFilePath("sis_stats_cache.dat");
         private static readonly byte[] Entropy = Encoding.UTF8.GetBytes(Environment.UserName + Environment.MachineName + "_SisCache_V1");
 
+        /// <summary>Loads the cache, silently purging (and re-saving) any entries whose
+        /// <see cref="StudentAcademicStats.LastSyncedUtc"/> is older than <paramref name="retentionDays"/>.</summary>
         public static Dictionary<string, StudentAcademicStats> LoadCache(int retentionDays)
         {
             if (!File.Exists(FilePath)) return new Dictionary<string, StudentAcademicStats>();
@@ -45,6 +50,7 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Serializes and DPAPI-encrypts the entire cache to disk, overwriting the previous file.</summary>
         public static void SaveCache(Dictionary<string, StudentAcademicStats> cache)
         {
             string json = JsonSerializer.Serialize(cache);
@@ -52,6 +58,9 @@ namespace StudentReportGenerator.Services
             File.WriteAllBytes(FilePath, encryptedBytes);
         }
 
+        /// <summary>Inserts or replaces the cached stats for one student (keyed by
+        /// <see cref="StudentAcademicStats.ExternalStudentId"/>) and persists immediately. No-op if
+        /// the stats have no external ID to key on.</summary>
         public static void UpsertStats(StudentAcademicStats stats, int retentionDays)
         {
             if (string.IsNullOrWhiteSpace(stats.ExternalStudentId)) return;
@@ -60,6 +69,8 @@ namespace StudentReportGenerator.Services
             SaveCache(cache);
         }
 
+        /// <summary>Deletes the entire cache file. Used by the "Purge Cached Data" settings action
+        /// so a school's data lead can wipe locally cached SIS data on demand.</summary>
         public static void PurgeAll()
         {
             if (File.Exists(FilePath)) File.Delete(FilePath);

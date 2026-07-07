@@ -10,8 +10,14 @@ using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 
 namespace StudentReportGenerator.Services
 {
+    /// <summary>
+    /// Exports one or many reports to a .docx file using the OpenXML SDK (no Microsoft Word
+    /// installation required). Optionally applies a <see cref="SchoolBranding"/> letterhead (logo +
+    /// school name in the school's accent colour) so exports look like they belong to the school.
+    /// </summary>
     public static class WordExportService
     {
+        /// <summary>Exports a single student's report as a one-page (or more) Word document.</summary>
         public static void ExportSingle(string filePath, string studentName, string reportText, SchoolBranding? branding = null)
         {
             using (WordprocessingDocument wordDoc = WordprocessingDocument.Create(filePath, WordprocessingDocumentType.Document))
@@ -26,6 +32,8 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>Exports every record in <paramref name="records"/> into a single Word document,
+        /// one student per page (each report starts with a fresh letterhead and page break).</summary>
         public static void ExportBatch(string filePath, List<SessionRecord> records, SchoolBranding? branding = null)
         {
             using (WordprocessingDocument wordDoc = WordprocessingDocument.Create(filePath, WordprocessingDocumentType.Document))

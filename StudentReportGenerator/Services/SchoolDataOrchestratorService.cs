@@ -5,10 +5,13 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
-    // Thin orchestrator parallel to ReportOrchestratorService: resolves the configured
-    // SIS provider, fetches stats for one student on demand (data minimisation — never
-    // a bulk roster mirror), falls back to the encrypted local cache when the SIS is
-    // unreachable, and writes an audit line for every access.
+    /// <summary>
+    /// Thin orchestrator parallel to <see cref="ReportOrchestratorService"/>: resolves the school's
+    /// configured SIS provider, fetches verified stats for one student on demand (data minimisation —
+    /// never a bulk roster mirror), falls back to the encrypted local cache when the SIS is
+    /// unreachable, and writes an audit line for every access (a DPIA/compliance requirement — see
+    /// the School Data Integration Plan, Section 5).
+    /// </summary>
     public class SchoolDataOrchestratorService
     {
         private readonly AppStateService _appState;
@@ -18,12 +21,19 @@ namespace StudentReportGenerator.Services
             _appState = appState;
         }
 
+        /// <summary>True once the school has chosen a real SIS provider in Settings (i.e. anything
+        /// other than the zero-config "Manual Entry" default).</summary>
         public bool IsConnectionConfigured =>
             !string.IsNullOrWhiteSpace(_appState.CurrentSettings.SchoolDataProvider) &&
             _appState.CurrentSettings.SchoolDataProvider != "Manual Entry";
 
-        // Future connectors (WondeSchoolDatabaseService, OneRosterSchoolDatabaseService, ...)
-        // slot in here exactly like AI providers do in AiServiceFactory.
+        /// <summary>
+        /// Resolves the <see cref="ISchoolDatabaseService"/> for the school's configured provider.
+        /// Future connectors (a Wonde implementation for UK schools, a OneRoster/Clever/ClassLink
+        /// implementation for US districts) slot in here as additional switch cases, exactly like
+        /// AI providers do in <see cref="AiServiceFactory"/>. Only <see cref="ManualEntrySchoolDatabaseService"/>
+        /// exists today.
+        /// </summary>
         private ISchoolDatabaseService ResolveProvider()
         {
             return _appState.CurrentSettings.SchoolDataProvider switch
@@ -32,6 +42,12 @@ namespace StudentReportGenerator.Services
             };
         }
 
+        /// <summary>
+        /// Fetches verified academic stats for a student, in order of preference: (1) live from the
+        /// configured SIS provider, caching the result on success; (2) the encrypted local cache if
+        /// the SIS call fails or throws; (3) <c>null</c>, meaning the caller should fall back to the
+        /// teacher's manual entry — this always remains a fully supported path, never just an outage fallback.
+        /// </summary>
         public async Task<StudentAcademicStats?> GetStatsForStudentAsync(StudentProfile student)
         {
             if (!IsConnectionConfigured) return null;

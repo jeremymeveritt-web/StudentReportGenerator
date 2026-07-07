@@ -7,9 +7,17 @@ using StudentReportGenerator.Services;
 
 namespace StudentReportGenerator
 {
+    /// <summary>
+    /// Application entry point and composition root: wires up Serilog logging, global exception
+    /// handlers, and the dependency injection container that every ViewModel and service in the
+    /// app is resolved from. See <see cref="ConfigureServices"/> for the full DI registration list.
+    /// </summary>
     public partial class App : Application
     {
-        // This is our central service registry
+        /// <summary>The app-wide DI container, built once at startup. Exposed statically only
+        /// because WPF's <see cref="Application"/>/<see cref="Window"/> types are themselves
+        /// constructed outside normal DI flow in a few places; everything else should receive its
+        /// dependencies through constructor injection rather than reading this directly.</summary>
         public static IServiceProvider? ServiceProvider { get; private set; }
 
         protected override void OnStartup(StartupEventArgs e)
@@ -41,6 +49,9 @@ namespace StudentReportGenerator
             base.OnExit(e);
         }
 
+        /// <summary>Configures Serilog to write rolling daily log files to
+        /// <c>%AppData%\FacultyFlow\logs</c>, retaining the last 14 days. Must run before
+        /// <see cref="RegisterGlobalExceptionHandlers"/>, since the handlers log through this logger.</summary>
         private static void ConfigureLogging()
         {
             // Rolling daily log files under %AppData%\FacultyFlow\logs, kept for two weeks
@@ -55,6 +66,13 @@ namespace StudentReportGenerator
                 .CreateLogger();
         }
 
+        /// <summary>
+        /// Catches every category of otherwise-unhandled exception so the app never silently
+        /// crashes without a trace: UI-thread exceptions (shown to the user with a friendly
+        /// message and marked handled so the app keeps running), fatal AppDomain-level exceptions
+        /// (logged before the process terminates), and unobserved exceptions from fire-and-forget
+        /// background tasks.
+        /// </summary>
         private void RegisterGlobalExceptionHandlers()
         {
             DispatcherUnhandledException += (_, args) =>
@@ -82,6 +100,13 @@ namespace StudentReportGenerator
             };
         }
 
+        /// <summary>
+        /// Registers every service, factory, ViewModel, and view with the DI container.
+        /// Services that hold shared state (<see cref="AppStateService"/>, the orchestrators) are
+        /// singletons; ViewModels and the main window are transient, since WPF only ever constructs
+        /// one of each in practice but transient avoids accidentally sharing ViewModel state if
+        /// that assumption ever changes.
+        /// </summary>
         private void ConfigureServices(IServiceCollection services)
         {
             // Named HttpClient via IHttpClientFactory so DNS/socket lifetimes are managed correctly

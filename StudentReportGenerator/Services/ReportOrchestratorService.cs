@@ -3,7 +3,14 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
-    // This service acts as the traffic cop for all AI requests across the entire application.
+    /// <summary>
+    /// Single entry point for every AI-generated report in the app: single reports, whole-class
+    /// batches, side-by-side provider comparison, tone previews, and utility calls (simplify/
+    /// translate/tone-audit) all funnel through <see cref="GenerateAsync"/>. Resolves the correct
+    /// provider via <see cref="IAiServiceFactory"/>, executes the call, and centrally tracks usage
+    /// analytics (token estimates, per-provider report counts) so that bookkeeping lives in exactly
+    /// one place regardless of which UI flow triggered the generation.
+    /// </summary>
     public class ReportOrchestratorService
     {
         private readonly IAiServiceFactory _aiServiceFactory;
@@ -15,12 +22,14 @@ namespace StudentReportGenerator.Services
             _appState = appState;
         }
 
+        /// <param name="request">The fully-populated report request (student data, notes, framework).</param>
+        /// <param name="providerOverride">When set (used by Compare Mode to query two providers side by
+        /// side), generates against this provider instead of the teacher's configured default.</param>
         public async Task<ReportResponse> GenerateAsync(ReportRequest request, string? providerOverride = null)
         {
-            // Use the override if provided (for Compare Mode), otherwise use the global default
             string provider = providerOverride ?? _appState.CurrentSettings.AiProvider;
 
-            // 1. Resolve the right engine, key, and model tier through the DI factory
+            // 1. Resolve the right engine, decrypted key, and model tier through the DI factory.
             var (aiEngine, activeKey, modelTier) = _aiServiceFactory.Create(provider);
             request.SelectedModel = modelTier;
 
@@ -29,14 +38,15 @@ namespace StudentReportGenerator.Services
                 return new ReportResponse { IsSuccess = false, ErrorMessage = "ERROR: Missing API Key inside configuration profiles. Please check Settings." };
             }
 
-            // 2. Execute the network request
+            // 2. Execute the network request (retry/backoff handled inside BaseAiService).
             var response = await aiEngine.GenerateReportAsync(request);
 
-            // 3. Centralized Analytics Tracking!
+            // 3. Centralised analytics: every successful generation, regardless of which screen
+            //    triggered it, updates the same running totals shown on the Usage Statistics tab.
             if (response.IsSuccess)
             {
                 int words = response.GeneratedReport.Split(' ').Length;
-                _appState.CurrentSettings.TotalTokensEstimated += (long)(words * 1.3);
+                _appState.CurrentSettings.TotalTokensEstimated += (long)(words * 1.3); // rough words-to-tokens estimate
                 _appState.CurrentSettings.TotalReportsGenerated++;
 
                 if (provider.Contains("NVIDIA")) _appState.CurrentSettings.NvidiaReportsCount++;

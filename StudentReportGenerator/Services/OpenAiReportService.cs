@@ -6,6 +6,8 @@ using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
+    /// <summary>OpenAI provider (GPT-4o family). Uses the standard Chat Completions API shape,
+    /// which NVIDIA NIM's OpenAI-compatible endpoint also follows almost verbatim — see <see cref="NvidiaReportService"/>.</summary>
     public class OpenAiReportService : BaseAiService
     {
         public OpenAiReportService(HttpClient httpClient, string apiKey) : base(httpClient, apiKey) { }
@@ -29,6 +31,7 @@ namespace StudentReportGenerator.Services
 
         protected override string ParseResponse(string responseBody)
         {
+            // Chat Completions response shape: choices[0].message.content
             using var doc = JsonDocument.Parse(responseBody);
             return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
         }
