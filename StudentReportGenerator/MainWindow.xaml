@@ -229,6 +229,21 @@
                                 </StackPanel>
                             </Grid>
 
+                            <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="3*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="External ID (UPN):" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                    <TextBox Text="{Binding ExternalStudentId, UpdateSourceTrigger=PropertyChanged}" Height="35" Padding="8" FontSize="13"
+                                             AutomationProperties.Name="External student ID"/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="2" Text="The school system's own pupil identifier (UPN in the UK, or the Wonde/OneRoster ID). Only needed when a school data connection is configured — it lets verified attendance and grades flow into this student's reports."
+                                           FontSize="11" Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
+                            </Grid>
+
                             <WrapPanel Margin="0,0,0,20">
                                 <Button Command="{Binding ImportRosterCommand}" AutomationProperties.Name="Import Roster" Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeInfoBg}" Foreground="{DynamicResource ThemeInfoText}" Height="30" Margin="0,0,8,5">
                                     <StackPanel Orientation="Horizontal">
@@ -379,7 +394,17 @@
                                     </Expander>
                                 </StackPanel>
                             </Border>
-                            <Button Command="{Binding GenerateSingleCommand}" Content="Generate Report" Height="45" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}" Margin="0,5,0,0"/>
+                            <Grid Margin="0,5,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Command="{Binding GenerateSingleCommand}" Content="Generate Report" Height="45" FontSize="14" Style="{StaticResource ModernPrimaryButtonStyle}"/>
+                                <Button Grid.Column="1" Command="{Binding CancelGenerationCommand}" Content="Cancel" Height="45" FontSize="14" Width="110" Margin="8,0,0,0"
+                                        Style="{StaticResource ModernButtonStyle}" Background="{DynamicResource ThemeDangerStrongBg}" Foreground="White"
+                                        Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVis}}"
+                                        AutomationProperties.Name="Cancel generation"/>
+                            </Grid>
                         </StackPanel>
                     </ScrollViewer>
 
@@ -657,6 +682,41 @@
                                 <TextBlock Text="School data provider:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                                 <ComboBox SelectedValue="{Binding SettingsVM.SelectedSchoolDataProvider, Mode=TwoWay}" ItemsSource="{Binding SettingsVM.SchoolDataProviderOptions}" Height="35" Margin="0,0,0,10"
                                           AutomationProperties.Name="School data provider"/>
+
+                                <!-- Wonde (UK) connector configuration -->
+                                <StackPanel Visibility="{Binding SettingsVM.IsWondeSelected, Converter={StaticResource BoolToVis}}" Margin="0,0,0,10">
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="15"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="Wonde School ID:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                            <TextBox Text="{Binding SettingsVM.WondeSchoolId, UpdateSourceTrigger=PropertyChanged}" Height="35" Padding="8" FontSize="13"
+                                                     AutomationProperties.Name="Wonde school ID"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Wonde API Token:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                            <PasswordBox x:Name="pbWondeToken" Height="35" Padding="8" PasswordChanged="PbWondeToken_PasswordChanged"
+                                                         AutomationProperties.Name="Wonde API token"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="Issued by Wonde once your school approves access (requires a signed Data Processing Agreement). The token is encrypted on this computer and never leaves it. A previously saved token is kept if the box is left blank."
+                                               FontSize="11" Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Command="{Binding SettingsVM.TestSisConnectionCommand}" Content="Test Connection" Style="{StaticResource ModernButtonStyle}" Height="28" Padding="10,0" FontSize="11" Margin="0,0,10,0"/>
+                                        <TextBlock Text="{Binding SettingsVM.SisTestStatus}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- OneRoster / CSV import connector configuration -->
+                                <StackPanel Visibility="{Binding SettingsVM.IsCsvProviderSelected, Converter={StaticResource BoolToVis}}" Margin="0,0,0,10">
+                                    <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource ThemeMutedText}" Margin="0,0,0,6"
+                                               Text="Works with any school system: export a CSV from your MIS/SIS and press Sync Now to import it into the encrypted local cache. Recognised columns (any order): ExternalStudentId (required — UPN / StudentId / SourcedId also accepted), Name, AttendancePercent, BehaviourPoints, Grades (e.g. &quot;Maths=6; Science=7&quot;), SupportPlan, TargetGrade. Students are auto-matched to your roster by name."/>
+                                    <TextBlock Text="{Binding SettingsVM.SisCsvLastImportDisplay}" FontSize="11" Foreground="{DynamicResource ThemeMutedText}" Margin="0,0,0,6"/>
+                                </StackPanel>
+
                                 <CheckBox IsChecked="{Binding SettingsVM.IncludeAttendanceInPrompts}" Content="Include attendance in AI prompts" FontSize="13" Margin="0,0,0,6"/>
                                 <CheckBox IsChecked="{Binding SettingsVM.IncludeBehaviourInPrompts}" Content="Include behaviour points in AI prompts" FontSize="13" Margin="0,0,0,6"/>
                                 <CheckBox IsChecked="{Binding SettingsVM.IncludeGradesInPrompts}" Content="Include recent assessment grades in AI prompts" FontSize="13" Margin="0,0,0,6"/>
@@ -775,6 +835,23 @@
                                                  Visibility="{Binding SettingsVM.IsTestingConnection, Converter={StaticResource BoolToVis}}"/>
                                     <TextBlock Grid.Column="1" Text="{Binding SettingsVM.ApiTestStatus}" FontSize="12" Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                 </Grid>
+
+                                <TextBlock Text="WRITING QUALITY" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,10"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="15"/>
+                                        <ColumnDefinition Width="2*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Writing creativity:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                        <ComboBox ItemsSource="{Binding SettingsVM.CreativityOptions}" SelectedItem="{Binding SettingsVM.SelectedCreativityLevel, Mode=TwoWay}" Height="35"
+                                                  AutomationProperties.Name="Writing creativity"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="Low keeps every report measured and consistent; High varies phrasing more between students. Applies to all four AI providers."
+                                               FontSize="11" Foreground="{DynamicResource ThemeMutedText}" TextWrapping="Wrap" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+                                </Grid>
+                                <CheckBox IsChecked="{Binding SettingsVM.UseCommentBankStyle}" Content="Use my comment bank phrases as style examples, so drafts sound like me" FontSize="13" Margin="0,0,0,20"/>
 
                                 <TextBlock Text="CUSTOM WRITING STYLES" FontWeight="Bold" Foreground="{Binding SettingsVM.NavBarBackground}" Margin="0,10,0,10"/>
                                 <TextBlock Text="Style Name (e.g. SEN Friendly):" FontWeight="SemiBold" Margin="0,0,0,5"/>

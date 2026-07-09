@@ -1,4 +1,6 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
 using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
@@ -25,7 +27,12 @@ namespace StudentReportGenerator.Services
         /// <param name="request">The fully-populated report request (student data, notes, framework).</param>
         /// <param name="providerOverride">When set (used by Compare Mode to query two providers side by
         /// side), generates against this provider instead of the teacher's configured default.</param>
-        public async Task<ReportResponse> GenerateAsync(ReportRequest request, string? providerOverride = null)
+        /// <param name="onDelta">When set, the report is streamed: this callback receives each text
+        /// fragment as it generates (single-report path). Null keeps the classic all-at-once call.</param>
+        /// <param name="ct">Cancels the in-flight HTTP call; user cancellation propagates as
+        /// <see cref="OperationCanceledException"/> per the <see cref="BaseAiService"/> contract.</param>
+        public async Task<ReportResponse> GenerateAsync(ReportRequest request, string? providerOverride = null,
+            Action<string>? onDelta = null, CancellationToken ct = default)
         {
             string provider = providerOverride ?? _appState.CurrentSettings.AiProvider;
 
@@ -38,8 +45,10 @@ namespace StudentReportGenerator.Services
                 return new ReportResponse { IsSuccess = false, ErrorMessage = "ERROR: Missing API Key inside configuration profiles. Please check Settings." };
             }
 
-            // 2. Execute the network request (retry/backoff handled inside BaseAiService).
-            var response = await aiEngine.GenerateReportAsync(request);
+            // 2. Execute the network request (retry/backoff/stream-fallback handled inside BaseAiService).
+            var response = onDelta != null
+                ? await aiEngine.GenerateReportStreamAsync(request, onDelta, ct)
+                : await aiEngine.GenerateReportAsync(request, ct);
 
             // 3. Centralised analytics: every successful generation, regardless of which screen
             //    triggered it, updates the same running totals shown on the Usage Statistics tab.

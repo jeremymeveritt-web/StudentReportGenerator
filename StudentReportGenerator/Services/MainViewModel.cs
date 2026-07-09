@@ -41,6 +41,7 @@ namespace StudentReportGenerator.Services
         public SettingsViewModel SettingsVM { get; }
 
         private CancellationTokenSource? _batchCancellationTokenSource;
+        private CancellationTokenSource? _generationCts;
         private ObservableCollection<SessionRecord> _sessionHistory = new ObservableCollection<SessionRecord>();
         private List<StudentProfile> _studentDatabase = new List<StudentProfile>();
         private ObservableCollection<string> _studentNames = new ObservableCollection<string>();
@@ -135,6 +136,7 @@ namespace StudentReportGenerator.Services
         public ICommand RapidNextCommand { get; }
         public ICommand RapidSkipCommand { get; }
         public ICommand RetryQueuedCommand { get; }
+        public ICommand CancelGenerationCommand { get; }
 
         public MainViewModel(AppStateService appState, SettingsViewModel settingsVM, ReportOrchestratorService orchestrator, SchoolDataOrchestratorService schoolData)
         {
@@ -187,6 +189,7 @@ namespace StudentReportGenerator.Services
             RapidNextCommand = new RelayCommand(_ => RapidCommitAndAdvance(), _ => !string.IsNullOrWhiteSpace(RapidCurrentName));
             RapidSkipCommand = new RelayCommand(_ => RapidAdvance(), _ => !string.IsNullOrWhiteSpace(RapidCurrentName));
             RetryQueuedCommand = new AsyncRelayCommand(_ => RetryQueuedReportsAsync(), _ => _offlineQueue.Count > 0 && !IsBusy);
+            CancelGenerationCommand = new RelayCommand(_ => _generationCts?.Cancel(), _ => IsGenerating);
 
             _commentBankPhrases = CommentBankService.LoadPhrases();
             RefreshCommentBank();
@@ -289,7 +292,50 @@ namespace StudentReportGenerator.Services
 
             IsCompareRightVisible = false;
             StatusText = "Generating report...";
-            await ProcessSingleReportExecutionAsync(cleanStudentName, compiledNotes, _appState.CurrentSettings.AiProvider, report => GeneratedReportOutput = report);
+
+            // Streaming single-report path: the preview fills token-by-token, cancellable mid-flight.
+            _generationCts?.Dispose();
+            _generationCts = new CancellationTokenSource();
+            try
+            {
+                GeneratedReportOutput = string.Empty;
+                await ProcessSingleReportExecutionAsync(cleanStudentName, compiledNotes, _appState.CurrentSettings.AiProvider,
+                    report => GeneratedReportOutput = report,
+                    ct: _generationCts.Token,
+                    onDelta: AppendReportDelta);
+            }
+            finally
+            {
+                _generationCts?.Dispose();
+                _generationCts = null;
+            }
+        }
+
+        /// <summary>Maps the teacher's "Writing creativity" setting to a sampling temperature.</summary>
+        private static double? CreativityToTemperature(string level) => level switch
+        {
+            "Low" => 0.3,
+            "High" => 0.95,
+            _ => 0.7,
+        };
+
+        /// <summary>
+        /// Appends one streamed fragment to the report preview. Writes the backing field directly
+        /// (raising only the property change) so the per-token hot path skips the reading-level
+        /// recalculation and command requery the full setter triggers — those run once, on the final
+        /// complete text. Marshals to the dispatcher defensively in case a provider's stream ever
+        /// resumes off the UI thread.
+        /// </summary>
+        private void AppendReportDelta(string delta)
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                dispatcher.Invoke(() => AppendReportDelta(delta));
+                return;
+            }
+            _generatedReportOutput += delta;
+            OnPropertyChanged(nameof(GeneratedReportOutput));
         }
 
         /// <summary>
@@ -307,7 +353,12 @@ namespace StudentReportGenerator.Services
         /// each other's flag updates.</param>
         /// <returns>True on success; false on any failure (including a network timeout that has
         /// been queued for automatic retry — see <see cref="EnqueueForRetry"/>).</returns>
-        private async Task<bool> ProcessSingleReportExecutionAsync(string name, string notes, string provider, Action<string> onCompleteOutput, bool managesBusyFlag = true)
+        /// <param name="ct">Cancels the in-flight AI call (Cancel button / batch abort). User
+        /// cancellation is reported as "Generation cancelled." — never queued for offline retry.</param>
+        /// <param name="onDelta">When set, the report streams: this receives each text fragment as
+        /// the provider produces it (single-report path only).</param>
+        private async Task<bool> ProcessSingleReportExecutionAsync(string name, string notes, string provider, Action<string> onCompleteOutput,
+            bool managesBusyFlag = true, CancellationToken ct = default, Action<string>? onDelta = null)
         {
             if (managesBusyFlag) IsGenerating = true;
 
@@ -331,9 +382,19 @@ namespace StudentReportGenerator.Services
                 SchoolName = _appState.CurrentSettings.SchoolName,
                 TeacherSignoff = _appState.CurrentSettings.TeacherSignoff,
                 TargetGrade = dbTargetGrade,
-                SupportNeeds = dbSupportNeeds
-
+                SupportNeeds = dbSupportNeeds,
+                Temperature = CreativityToTemperature(_appState.CurrentSettings.CreativityLevel)
             };
+
+            // Optional voice-matching: a random sample of the teacher's comment bank becomes
+            // style exemplars in the system prompt (capped inside PromptBuilderService).
+            if (_appState.CurrentSettings.UseCommentBankStyle && _commentBankPhrases.Count > 0)
+            {
+                request.StyleExemplars = _commentBankPhrases
+                    .OrderBy(_ => Random.Shared.Next())
+                    .Take(PromptBuilderService.MaxStyleExemplars)
+                    .ToList();
+            }
 
             // Ground the prompt in SIS facts when a connection exists and the school has
             // opted the category in; unmatched students silently keep the manual-entry values
@@ -355,8 +416,25 @@ namespace StudentReportGenerator.Services
 
             try
             {
-                var response = await _orchestrator.GenerateAsync(request, provider);
+                var response = await _orchestrator.GenerateAsync(request, provider, onDelta, ct);
                 if (managesBusyFlag) IsGenerating = false;
+
+                // Timeout (never user cancellation — that throws) → offline drafting queue
+                if (!response.IsSuccess && response.IsTimeout)
+                {
+                    if (name != "Student Preview")
+                    {
+                        EnqueueForRetry(name, notes);
+                        onCompleteOutput("The connection timed out. This report has been queued and will be retried automatically when your connection returns.");
+                        StatusText = "Offline — report queued for retry.";
+                    }
+                    else
+                    {
+                        onCompleteOutput("The connection timed out. Please check your school's internet connection or firewall and try again.");
+                        StatusText = "Connection timed out.";
+                    }
+                    return false;
+                }
 
                 if (response.IsSuccess)
                 {
@@ -386,21 +464,12 @@ namespace StudentReportGenerator.Services
                 StatusText = "Service unavailable.";
                 return false;
             }
-            catch (TaskCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                // The teacher pressed Cancel — deliberately NOT queued for offline retry.
                 if (managesBusyFlag) IsGenerating = false;
-                if (name != "Student Preview")
-                {
-                    // Offline drafting: keep the request and retry automatically when connectivity returns
-                    EnqueueForRetry(name, notes);
-                    onCompleteOutput("The connection timed out. This report has been queued and will be retried automatically when your connection returns.");
-                    StatusText = "Offline — report queued for retry.";
-                }
-                else
-                {
-                    onCompleteOutput("The connection timed out. Please check your school's internet connection or firewall and try again.");
-                    StatusText = "Connection timed out.";
-                }
+                onCompleteOutput("Generation cancelled.");
+                StatusText = "Cancelled.";
                 return false;
             }
             catch (Exception)
@@ -460,57 +529,87 @@ namespace StudentReportGenerator.Services
             }
         }
 
-        /// <summary>Processes the Whole-Class Reports batch box line-by-line ("Name | Notes"),
-        /// generating one report per line with a short delay between calls to avoid hammering the
-        /// AI provider's rate limits. Cancellable mid-run via <see cref="CancelBatchGeneration"/>.</summary>
+        /// <summary>
+        /// Processes the Whole-Class Reports batch box line-by-line ("Name | Notes"), generating up
+        /// to two reports concurrently (bounded by a <see cref="SemaphoreSlim"/> so no provider's
+        /// rate limits are hammered) instead of the old strictly-serial loop with a 1.5s pause —
+        /// roughly halving whole-class generation time. Completed reports are appended to the
+        /// preview strictly in input order, regardless of which finished first. Cancellable mid-run
+        /// via <see cref="CancelBatchGeneration"/>, which also aborts the in-flight HTTP calls.
+        /// </summary>
         private async Task GenerateBatchAsync()
         {
             if (string.IsNullOrWhiteSpace(BatchDataInput)) return;
             RunSafeguardingScan(BatchDataInput);
             IsBatchModeActive = true;
             IsCompareRightVisible = false;
-            GeneratedReportOutput = "🚀 Initializing Multi-Threaded Batch Processor...\n";
+            GeneratedReportOutput = "🚀 Initializing Parallel Batch Processor...\n";
 
-            var lines = BatchDataInput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var jobs = new List<(int Index, string Name, string Notes)>();
+            foreach (var line in BatchDataInput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!line.Contains('|')) continue;
+                var parts = line.Split('|');
+                string name = parts[0].Trim();
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                jobs.Add((jobs.Count, name, parts[1].Trim()));
+            }
+            if (jobs.Count == 0) { IsBatchModeActive = false; return; }
+
             _batchCancellationTokenSource = new CancellationTokenSource();
             var token = _batchCancellationTokenSource.Token;
+            var results = new string?[jobs.Count];
+            int done = 0, flushed = 0;
+            using var gate = new SemaphoreSlim(2); // concurrency degree: polite to every provider's rate limits
 
+            // Appends finished reports in input order: stops at the first still-running slot, so
+            // Amelia's card can never appear after Ben's just because Ben's provider call was faster.
+            void FlushContiguous()
+            {
+                while (flushed < results.Length && results[flushed] != null)
+                {
+                    GeneratedReportOutput += results[flushed];
+                    flushed++;
+                }
+            }
+
+            IsGenerating = true;
             try
             {
-                for (int i = 0; i < lines.Length; i++)
+                StatusText = $"Batch: 0 of {jobs.Count} complete...";
+                var tasks = jobs.Select(async job =>
                 {
-                    if (token.IsCancellationRequested) break;
-                    if (!lines[i].Contains("|")) continue;
-
-                    var parts = lines[i].Split('|');
-                    string studentNameClean = parts[0].Trim();
-                    string studentNotesClean = parts[1].Trim();
-
-                    if (string.IsNullOrWhiteSpace(studentNameClean)) continue;
-
-                    StatusText = $"Generating batch card {i + 1} of {lines.Length}...";
-
-                    await ProcessSingleReportExecutionAsync(studentNameClean, studentNotesClean, _appState.CurrentSettings.AiProvider, report =>
+                    await gate.WaitAsync(token);
+                    try
                     {
-                        GeneratedReportOutput += $"\n\n=========================================\n📝 STUDENT: {studentNameClean.ToUpper()}\n=========================================\n{report}\n";
-                    });
-
-                    if (i < lines.Length - 1 && !token.IsCancellationRequested)
-                    {
-                        await Task.Delay(1500, token);
+                        await Task.Delay(250, token); // brief spacing when a slot opens
+                        await ProcessSingleReportExecutionAsync(job.Name, job.Notes, _appState.CurrentSettings.AiProvider,
+                            report => results[job.Index] = $"\n\n=========================================\n📝 STUDENT: {job.Name.ToUpper()}\n=========================================\n{report}\n",
+                            managesBusyFlag: false, ct: token);
                     }
-                }
+                    finally { gate.Release(); }
 
+                    // These continuations resume on the dispatcher thread (no ConfigureAwait(false)
+                    // anywhere in the chain), so shared state below needs no locking.
+                    done++;
+                    StatusText = $"Batch: {done} of {jobs.Count} complete...";
+                    FlushContiguous();
+                }).ToList();
+
+                await Task.WhenAll(tasks);
+                FlushContiguous();
                 GeneratedReportOutput += "\n\n✅ BATCH PROCESSING COMPLETE.";
                 StatusText = "Batch update completed.";
             }
-            catch (TaskCanceledException)
+            catch (OperationCanceledException)
             {
+                FlushContiguous();
                 GeneratedReportOutput += "\n\n🛑 BATCH ABORTED BY USER.";
                 StatusText = "Batch Stopped.";
             }
             finally
             {
+                IsGenerating = false;
                 IsBatchModeActive = false;
                 _batchCancellationTokenSource?.Dispose();
                 _batchCancellationTokenSource = null;
@@ -617,13 +716,12 @@ namespace StudentReportGenerator.Services
                 {
                     var lines = File.ReadAllLines(dialog.FileName);
                     var sb = new StringBuilder();
-                    var parser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
                     int skippedHeader = 0;
 
                     foreach (var line in lines)
                     {
                         if (string.IsNullOrWhiteSpace(line)) continue;
-                        var parts = parser.Split(line).Select(s => s.Trim('"', ' ')).ToArray();
+                        var parts = CsvUtil.SplitLine(line);
                         if (parts.Length >= 1)
                         {
                             string studentName = parts[0].Trim();
@@ -644,32 +742,72 @@ namespace StudentReportGenerator.Services
             }
         }
 
+        /// <summary>
+        /// Imports a class roster CSV. Header-driven: recognises Name, Class, and an optional
+        /// student-ID column (ExternalStudentId / UPN / StudentId / SourcedId) in any order, so a
+        /// school's MIS export can populate <see cref="StudentProfile.ExternalStudentId"/> for SIS
+        /// matching in one step. Falls back to positional Name,Class when no header row exists.
+        /// Existing profiles (matched by name) are updated rather than duplicated.
+        /// </summary>
         private void ImportRosterCsv()
         {
             var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "CSV Files (*.csv)|*.csv" };
-            if (dialog.ShowDialog() == true)
+            if (dialog.ShowDialog() != true) return;
+
+            try
             {
-                try
+                var lines = File.ReadAllLines(dialog.FileName);
+
+                // Header detection: map recognised column names to indices from the first non-blank line
+                int nameCol = 0, classCol = 1, idCol = -1;
+                bool headerFound = false;
+                int firstDataLine = 0;
+                for (int i = 0; i < lines.Length; i++)
                 {
-                    var lines = File.ReadAllLines(dialog.FileName);
-                    var parser = new Regex(",(?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
-                    foreach (var line in lines)
+                    if (string.IsNullOrWhiteSpace(lines[i])) continue;
+                    var headers = CsvUtil.SplitLine(lines[i]);
+                    for (int c = 0; c < headers.Length; c++)
                     {
-                        if (string.IsNullOrWhiteSpace(line)) continue;
-                        var parts = parser.Split(line).Select(s => s.Trim('"', ' ')).ToArray();
-                        if (parts.Length >= 1)
-                        {
-                            string sName = parts[0];
-                            if (sName.ToLower().Contains("name")) continue;
-                            if (!_studentDatabase.Any(s => s.FullName.Equals(sName, StringComparison.OrdinalIgnoreCase)))
-                                _studentDatabase.Add(new StudentProfile { FullName = sName, ClassName = parts.Length >= 2 ? parts[1] : string.Empty });
-                        }
+                        string h = headers[c].Replace(" ", "").Replace("_", "").ToLowerInvariant();
+                        if (h is "name" or "fullname") { nameCol = c; headerFound = true; }
+                        else if (h is "class" or "classname" or "group") classCol = c;
+                        else if (h is "externalstudentid" or "upn" or "studentid" or "sourcedid") idCol = c;
                     }
-                    StudentDatabaseService.SaveStudents(_studentDatabase);
-                    RefreshCollections();
+                    firstDataLine = headerFound ? i + 1 : i;
+                    break;
                 }
-                catch (Exception ex) { MessageBox.Show($"Roster error: {ex.Message}"); }
+
+                int added = 0, updated = 0;
+                for (int i = firstDataLine; i < lines.Length; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(lines[i])) continue;
+                    var parts = CsvUtil.SplitLine(lines[i]);
+                    if (parts.Length == 0) continue;
+
+                    string sName = nameCol < parts.Length ? parts[nameCol].Trim() : string.Empty;
+                    if (string.IsNullOrWhiteSpace(sName) || (!headerFound && sName.ToLower().Contains("name"))) continue;
+
+                    string sClass = classCol >= 0 && classCol < parts.Length ? parts[classCol].Trim() : string.Empty;
+                    string sId = idCol >= 0 && idCol < parts.Length ? parts[idCol].Trim() : string.Empty;
+
+                    var existing = _studentDatabase.FirstOrDefault(s => s.FullName.Equals(sName, StringComparison.OrdinalIgnoreCase));
+                    if (existing == null)
+                    {
+                        _studentDatabase.Add(new StudentProfile { FullName = sName, ClassName = sClass, ExternalStudentId = sId });
+                        added++;
+                    }
+                    else
+                    {
+                        if (!string.IsNullOrWhiteSpace(sClass)) existing.ClassName = sClass;
+                        if (!string.IsNullOrWhiteSpace(sId)) existing.ExternalStudentId = sId;
+                        updated++;
+                    }
+                }
+                StudentDatabaseService.SaveStudents(_studentDatabase);
+                RefreshCollections();
+                StatusText = $"Roster imported: {added} added, {updated} updated.";
             }
+            catch (Exception ex) { MessageBox.Show($"Roster error: {ex.Message}"); }
         }
 
         /// <summary>Adds a new student profile, or updates the existing one if the name already
@@ -688,7 +826,8 @@ namespace StudentReportGenerator.Services
                     ClassName = StudentClass,
                     ParentEmail = ParentEmail,
                     TargetGrade = TargetGrade,
-                    SupportNeeds = SupportNeeds
+                    SupportNeeds = SupportNeeds,
+                    ExternalStudentId = ExternalStudentId.Trim()
                 });
             }
             else
@@ -697,6 +836,7 @@ namespace StudentReportGenerator.Services
                 match.ParentEmail = ParentEmail;
                 match.TargetGrade = TargetGrade;
                 match.SupportNeeds = SupportNeeds;
+                match.ExternalStudentId = ExternalStudentId.Trim();
             }
 
             StudentDatabaseService.SaveStudents(_studentDatabase);
@@ -892,6 +1032,11 @@ namespace StudentReportGenerator.Services
                         ParentEmail = m.ParentEmail;
                         TargetGrade = m.TargetGrade;
                         SupportNeeds = m.SupportNeeds;
+                        ExternalStudentId = m.ExternalStudentId;
+                    }
+                    else
+                    {
+                        ExternalStudentId = string.Empty;
                     }
                     UpdateLastTermPreview(clean);
                     CustomNotes = string.Empty;
@@ -906,6 +1051,10 @@ namespace StudentReportGenerator.Services
             }
         }
         public string StudentClass { get => _studentClass; set => SetProperty(ref _studentClass, value); }
+        private string _externalStudentId = string.Empty;
+        /// <summary>The SIS's stable pupil identifier (UPN / Wonde ID) for the selected student —
+        /// the matching key that lets <see cref="SchoolDataOrchestratorService"/> fetch verified stats.</summary>
+        public string ExternalStudentId { get => _externalStudentId; set => SetProperty(ref _externalStudentId, value); }
         public string TargetGrade { get => _targetGrade; set => SetProperty(ref _targetGrade, value); }
         public string SupportNeeds { get => _supportNeeds; set => SetProperty(ref _supportNeeds, value); }
         public string ParentEmail { get => _parentEmail; set => SetProperty(ref _parentEmail, value); }

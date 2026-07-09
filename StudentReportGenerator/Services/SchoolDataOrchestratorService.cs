@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Serilog;
 using StudentReportGenerator.Models;
@@ -14,11 +17,17 @@ namespace StudentReportGenerator.Services
     /// </summary>
     public class SchoolDataOrchestratorService
     {
-        private readonly AppStateService _appState;
+        /// <summary>Name of the named <see cref="HttpClient"/> registered via <c>IHttpClientFactory</c>
+        /// in App.xaml.cs, used by live SIS connectors (currently Wonde).</summary>
+        public const string SchoolDataHttpClientName = "SchoolData";
 
-        public SchoolDataOrchestratorService(AppStateService appState)
+        private readonly AppStateService _appState;
+        private readonly IHttpClientFactory _httpClientFactory;
+
+        public SchoolDataOrchestratorService(AppStateService appState, IHttpClientFactory httpClientFactory)
         {
             _appState = appState;
+            _httpClientFactory = httpClientFactory;
         }
 
         /// <summary>True once the school has chosen a real SIS provider in Settings (i.e. anything
@@ -28,16 +37,22 @@ namespace StudentReportGenerator.Services
             _appState.CurrentSettings.SchoolDataProvider != "Manual Entry";
 
         /// <summary>
-        /// Resolves the <see cref="ISchoolDatabaseService"/> for the school's configured provider.
-        /// Future connectors (a Wonde implementation for UK schools, a OneRoster/Clever/ClassLink
-        /// implementation for US districts) slot in here as additional switch cases, exactly like
-        /// AI providers do in <see cref="AiServiceFactory"/>. Only <see cref="ManualEntrySchoolDatabaseService"/>
-        /// exists today.
+        /// Resolves the <see cref="ISchoolDatabaseService"/> for the school's configured provider,
+        /// exactly like AI providers resolve in <see cref="AiServiceFactory"/>: Wonde for UK schools
+        /// (live REST, credentials from Settings), the CSV import connector as the universal offline
+        /// path, and the manual-entry null object otherwise.
         /// </summary>
         private ISchoolDatabaseService ResolveProvider()
         {
-            return _appState.CurrentSettings.SchoolDataProvider switch
+            var settings = _appState.CurrentSettings;
+            return settings.SchoolDataProvider switch
             {
+                var p when p != null && p.Contains("Wonde") => new WondeSchoolDatabaseService(
+                    _httpClientFactory.CreateClient(SchoolDataHttpClientName),
+                    CryptoService.DecryptSecret(settings.WondeApiToken),
+                    settings.WondeSchoolId),
+                var p when p != null && (p.Contains("OneRoster") || p.Contains("CSV")) =>
+                    new OneRosterCsvSchoolDatabaseService(settings.SisCacheRetentionDays),
                 _ => new ManualEntrySchoolDatabaseService(),
             };
         }
@@ -61,7 +76,9 @@ namespace StudentReportGenerator.Services
                 var stats = await provider.GetStudentStatsAsync(student.ExternalStudentId);
                 if (stats != null)
                 {
-                    stats.LastSyncedUtc = DateTime.UtcNow;
+                    // Preserve the original sync time on cache-backed providers (CSV import): a
+                    // read must not refresh retention, or imported data would never expire.
+                    if (stats.LastSyncedUtc == default) stats.LastSyncedUtc = DateTime.UtcNow;
                     SchoolDataCacheService.UpsertStats(stats, retention);
                     Log.Information("SIS data accessed: provider={Provider} user={User} studentId={StudentId} source=live",
                         provider.ProviderName, Environment.UserName, student.ExternalStudentId);
@@ -83,6 +100,36 @@ namespace StudentReportGenerator.Services
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// "Sync Now" for live connectors: refreshes cached stats for the given roster students only
+        /// (those with a matched <see cref="StudentProfile.ExternalStudentId"/>) — never a
+        /// whole-school mirror, per the data-minimisation stance. Failures on individual students
+        /// are counted, not fatal, so one bad record can't abort a class-wide refresh.
+        /// </summary>
+        public async Task<(int Refreshed, int Failed)> RefreshAllAsync(
+            IReadOnlyList<StudentProfile> studentsWithIds,
+            IProgress<(int Done, int Total)>? progress,
+            CancellationToken ct = default)
+        {
+            int refreshed = 0, failed = 0, done = 0;
+            foreach (var student in studentsWithIds)
+            {
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    var stats = await GetStatsForStudentAsync(student);
+                    if (stats != null) refreshed++; else failed++;
+                }
+                catch
+                {
+                    failed++;
+                }
+                progress?.Report((++done, studentsWithIds.Count));
+                if (done < studentsWithIds.Count) await Task.Delay(250, ct); // gentle API pacing
+            }
+            return (refreshed, failed);
         }
     }
 }

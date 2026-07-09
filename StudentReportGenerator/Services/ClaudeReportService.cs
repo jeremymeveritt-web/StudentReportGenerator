@@ -1,24 +1,27 @@
-﻿using System.Net.Http;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using StudentReportGenerator.Models;
 
 namespace StudentReportGenerator.Services
 {
-    /// <summary>Anthropic Claude provider. Talks to the Messages API; only <see cref="BuildRequest"/>
-    /// and <see cref="ParseResponse"/> are provider-specific — retry/timeout handling lives in <see cref="BaseAiService"/>.</summary>
+    /// <summary>Anthropic Claude provider. Talks to the Messages API; only the request building and
+    /// response/stream parsing are provider-specific — retry/timeout/streaming plumbing lives in <see cref="BaseAiService"/>.</summary>
     public class ClaudeReportService : BaseAiService
     {
         public ClaudeReportService(HttpClient httpClient, string apiKey) : base(httpClient, apiKey) { }
 
-        protected override HttpRequestMessage BuildRequest(ReportRequest request)
+        protected override HttpRequestMessage BuildRequest(ReportRequest request, bool streaming = false)
         {
-            var prompt = PromptBuilderService.BuildSecurePrompt(request);
+            var parts = PromptBuilderService.BuildPromptParts(request);
             var payload = new
             {
                 model = request.SelectedModel,
                 max_tokens = Math.Max(1200, request.WordCount * 2),
-                messages = new[] { new { role = "user", content = prompt } }
+                temperature = request.Temperature ?? 0.7,
+                system = parts.SystemInstructions,
+                messages = new[] { new { role = "user", content = parts.UserContent } },
+                stream = streaming
             };
 
             var msg = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages");
@@ -39,6 +42,19 @@ namespace StudentReportGenerator.Services
                       .GetProperty("content")[0]
                       .GetProperty("text")
                       .GetString() ?? string.Empty;
+        }
+
+        protected override string? ParseStreamEvent(string eventJson)
+        {
+            // Text arrives only in content_block_delta events (delta.text); everything else
+            // (message_start, ping, message_delta, content_block_stop) carries no report text.
+            using var doc = JsonDocument.Parse(eventJson);
+            if (!doc.RootElement.TryGetProperty("type", out var type) ||
+                type.GetString() != "content_block_delta") return null;
+            if (doc.RootElement.TryGetProperty("delta", out var delta) &&
+                delta.TryGetProperty("text", out var text))
+                return text.GetString();
+            return null;
         }
     }
 }

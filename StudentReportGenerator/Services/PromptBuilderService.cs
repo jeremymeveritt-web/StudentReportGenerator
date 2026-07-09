@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Linq;
 using System.Text;
 using StudentReportGenerator.Models;
 
@@ -12,6 +13,18 @@ namespace StudentReportGenerator.Services
     /// </summary>
     public static class PromptBuilderService
     {
+        /// <summary>Maximum number of comment-bank phrases injected as style exemplars — enough to
+        /// establish a voice without bloating every prompt with the teacher's whole bank.</summary>
+        public const int MaxStyleExemplars = 8;
+
+        /// <summary>
+        /// The prompt split into the two roles modern chat APIs expect: durable instructions
+        /// (system) and the per-student data (user). Keeping instructions in the system role makes
+        /// providers follow them more reliably and further separates them from the quarantined
+        /// free-text teacher notes — a strengthening of the existing prompt-injection mitigation.
+        /// </summary>
+        public readonly record struct PromptParts(string SystemInstructions, string UserContent);
+
         /// <summary>
         /// Builds either a full report-generation prompt or, when <see cref="ReportRequest.UtilityInstruction"/>
         /// is set, a one-off utility prompt (used for "Simplify for Parents", "Translate", and the
@@ -23,74 +36,93 @@ namespace StudentReportGenerator.Services
         /// mitigation: instructions embedded in free-text teacher notes are less likely to be
         /// interpreted as commands by the model when clearly demarcated as data rather than instructions.
         /// </remarks>
-        public static string BuildSecurePrompt(ReportRequest request)
+        public static PromptParts BuildPromptParts(ReportRequest request)
         {
             // Utility mode: simplify/translate/tone-audit calls bypass the report framing
             // entirely and run the given instruction against quarantined content.
             if (!string.IsNullOrWhiteSpace(request.UtilityInstruction))
             {
                 var usb = new StringBuilder();
-                usb.AppendLine(request.UtilityInstruction);
                 usb.AppendLine("\n<content>");
                 usb.AppendLine(request.RawNotes);
                 usb.AppendLine("</content>");
-                return usb.ToString();
+                return new PromptParts(request.UtilityInstruction, usb.ToString());
             }
 
-            var sb = new StringBuilder();
-
             // 1. SYSTEM CONTEXT (Absolute Rules)
-            sb.AppendLine("You are an expert, professional educational assistant. Your ONLY job is to write a student performance report.");
-            sb.AppendLine($"Student Pronouns: {request.Pronouns}. CRITICAL: You must use these exact pronouns when referring to the student.");
-            sb.AppendLine($"Subject / Curriculum Topic: {request.Subject}");
+            var sys = new StringBuilder();
+            sys.AppendLine("You are an expert, professional educational assistant. Your ONLY job is to write a student performance report.");
+            sys.AppendLine($"Student Pronouns: {request.Pronouns}. CRITICAL: You must use these exact pronouns when referring to the student.");
+            sys.AppendLine($"Subject / Curriculum Topic: {request.Subject}");
 
 
             // 2. THE CHOSEN FRAMEWORK
             if (!string.IsNullOrWhiteSpace(request.SelectedFramework))
             {
-                sb.AppendLine($"\nTONE AND STYLE FRAMEWORK: {request.SelectedFramework}");
+                sys.AppendLine($"\nTONE AND STYLE FRAMEWORK: {request.SelectedFramework}");
             }
 
             // 3. HARD CONSTRAINTS
-            sb.AppendLine($"TARGET WORD COUNT: Approximately {request.WordCount} words.");
-            sb.AppendLine("DO NOT include any placeholder text like [Insert Name].");
+            sys.AppendLine($"TARGET WORD COUNT: Approximately {request.WordCount} words.");
+            sys.AppendLine("DO NOT include any placeholder text like [Insert Name].");
             // Guard against every child's report sounding identical when a whole school
             // shares the same frameworks and providers
-            sb.AppendLine("Vary your sentence structure and opening phrases naturally; do not reuse stock phrasing from typical AI-written reports.");
+            sys.AppendLine("Vary your sentence structure and opening phrases naturally; do not reuse stock phrasing from typical AI-written reports.");
 
             if (!string.IsNullOrWhiteSpace(request.TeacherSignoff) && request.TeacherSignoff != "Mr. / Ms. Teacher")
             {
-                sb.AppendLine($"Sign off the report cleanly with: {request.TeacherSignoff}");
+                sys.AppendLine($"Sign off the report cleanly with: {request.TeacherSignoff}");
+            }
+
+            // 3b. STYLE EXEMPLARS — samples of the teacher's own voice from their comment bank,
+            // capped so a large bank can't crowd out the actual instructions.
+            var exemplars = request.StyleExemplars?
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Take(MaxStyleExemplars)
+                .ToList();
+            if (exemplars is { Count: > 0 })
+            {
+                sys.AppendLine("\nSTYLE EXEMPLARS — phrases written in this teacher's own voice. Match their style, vocabulary and warmth; never copy any phrase verbatim:");
+                foreach (var phrase in exemplars) sys.AppendLine($"- {phrase}");
             }
 
             // 4. THE QUARANTINED DATA (XML Wrapped)
-            sb.AppendLine("\n<student_data>");
-            sb.AppendLine($"Name: {request.StudentName}");
-            sb.AppendLine($"Subject: {request.Subject}");
+            var usr = new StringBuilder();
+            usr.AppendLine("\n<student_data>");
+            usr.AppendLine($"Name: {request.StudentName}");
+            usr.AppendLine($"Subject: {request.Subject}");
 
             if (!string.IsNullOrWhiteSpace(request.TargetGrade))
-                sb.AppendLine($"Target Grade: {request.TargetGrade}");
+                usr.AppendLine($"Target Grade: {request.TargetGrade}");
 
             if (!string.IsNullOrWhiteSpace(request.SupportNeeds))
-                sb.AppendLine($"Special Educational Needs / Support: {request.SupportNeeds}");
+                usr.AppendLine($"Special Educational Needs / Support: {request.SupportNeeds}");
 
             // SIS-grounded facts (only present when the school has opted the category in)
             if (request.AttendancePercent.HasValue)
-                sb.AppendLine($"Verified Attendance This Term: {request.AttendancePercent.Value:0.#}%");
+                usr.AppendLine($"Verified Attendance This Term: {request.AttendancePercent.Value:0.#}%");
 
             if (request.BehaviourPoints.HasValue)
-                sb.AppendLine($"Verified Behaviour Points This Term: {request.BehaviourPoints.Value}");
+                usr.AppendLine($"Verified Behaviour Points This Term: {request.BehaviourPoints.Value}");
 
             if (!string.IsNullOrWhiteSpace(request.RecentGradesSummary))
-                sb.AppendLine($"Verified Recent Assessment Grades: {request.RecentGradesSummary}");
+                usr.AppendLine($"Verified Recent Assessment Grades: {request.RecentGradesSummary}");
 
-            sb.AppendLine($"\nTeacher Notes & Performance Data:\n{request.RawNotes}");
-            sb.AppendLine("</student_data>");
+            usr.AppendLine($"\nTeacher Notes & Performance Data:\n{request.RawNotes}");
+            usr.AppendLine("</student_data>");
 
             // 5. FINAL TRIGGER
-            sb.AppendLine("\nBegin generating the professional report now:");
+            usr.AppendLine("\nBegin generating the professional report now:");
 
-            return sb.ToString();
+            return new PromptParts(sys.ToString(), usr.ToString());
+        }
+
+        /// <summary>Single-string form of <see cref="BuildPromptParts"/> (system + user concatenated),
+        /// kept for callers and providers that don't use a separate system role.</summary>
+        public static string BuildSecurePrompt(ReportRequest request)
+        {
+            var parts = BuildPromptParts(request);
+            return parts.SystemInstructions + parts.UserContent;
         }
     }
 }

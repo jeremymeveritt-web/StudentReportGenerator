@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Security;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -21,6 +22,7 @@ namespace StudentReportGenerator.Services
     public class SettingsViewModel : ViewModelBase
     {
         private readonly AppStateService _appState;
+        private readonly SchoolDataOrchestratorService _schoolData;
 
         // UI State Fields
         private bool _isSettingsUnlocked = false;
@@ -55,10 +57,12 @@ namespace StudentReportGenerator.Services
         public ICommand ImportLibraryCommand { get; }
         public ICommand PurgeSisCacheCommand { get; }
         public ICommand SyncNowCommand { get; }
+        public ICommand TestSisConnectionCommand { get; }
 
-        public SettingsViewModel(AppStateService appState)
+        public SettingsViewModel(AppStateService appState, SchoolDataOrchestratorService schoolData)
         {
             _appState = appState;
+            _schoolData = schoolData;
 
             SaveProfileSettingsCommand = new RelayCommand(_ => SaveProfileSettings());
             UnlockSettingsCommand = new RelayCommand(_ => UnlockSettings());
@@ -68,7 +72,8 @@ namespace StudentReportGenerator.Services
             ExportLibraryCommand = new RelayCommand(_ => ExportSharedLibrary());
             ImportLibraryCommand = new RelayCommand(_ => ImportSharedLibrary());
             PurgeSisCacheCommand = new RelayCommand(_ => PurgeSisCache());
-            SyncNowCommand = new RelayCommand(_ => SyncNow());
+            SyncNowCommand = new AsyncRelayCommand(_ => SyncNowAsync(), _ => !IsSyncingSis);
+            TestSisConnectionCommand = new AsyncRelayCommand(_ => TestSisConnectionAsync(), _ => !IsSyncingSis);
 
             InitializeSettings();
         }
@@ -140,6 +145,9 @@ namespace StudentReportGenerator.Services
             if (!string.IsNullOrEmpty(settings.SmtpPassword))
                 _settingsSmtpSecurePassword = ConvertToSecureString(CryptoService.DecryptSecret(settings.SmtpPassword));
 
+            if (!string.IsNullOrEmpty(settings.WondeApiToken))
+                _wondeSecureToken = ConvertToSecureString(CryptoService.DecryptSecret(settings.WondeApiToken));
+
             _isDarkMode = settings.IsDarkMode;
             ApplyTheme(_isDarkMode);
             ApplyFontPreferences();
@@ -167,6 +175,7 @@ namespace StudentReportGenerator.Services
             if (DisableMasterPassword) _appState.CurrentSettings.MasterPassword = string.Empty;
             else if (!string.IsNullOrEmpty(SettingsMasterPassword)) _appState.CurrentSettings.MasterPassword = CryptoService.HashPassword(SettingsMasterPassword);
 
+            FlushWondeCredentials();
             FlushCurrentApiKey(); // Only this is needed!
 
             System.Windows.MessageBox.Show("Configuration updated successfully.", "Saved", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
@@ -486,6 +495,32 @@ namespace StudentReportGenerator.Services
             res["AppFontSize"] = 13.0 * _appState.CurrentSettings.UiTextScale;
         }
 
+        // --- AI generation quality ---
+        public System.Collections.Generic.List<string> CreativityOptions { get; } = new() { "Low", "Balanced", "High" };
+
+        /// <summary>"Low" keeps every report measured and consistent; "High" varies phrasing more.
+        /// Mapped to the provider sampling temperature (0.3 / 0.7 / 0.95) in MainViewModel.</summary>
+        public string SelectedCreativityLevel
+        {
+            get => _appState.CurrentSettings.CreativityLevel;
+            set
+            {
+                string clean = SanitizeControlOutput(value);
+                if (!string.IsNullOrWhiteSpace(clean) && _appState.CurrentSettings.CreativityLevel != clean)
+                {
+                    _appState.CurrentSettings.CreativityLevel = clean;
+                    _appState.SaveSettings();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool UseCommentBankStyle
+        {
+            get => _appState.CurrentSettings.UseCommentBankStyle;
+            set { if (_appState.CurrentSettings.UseCommentBankStyle != value) { _appState.CurrentSettings.UseCommentBankStyle = value; _appState.SaveSettings(); OnPropertyChanged(); } }
+        }
+
         // --- Trust & disclosure ---
         public bool AppendAiDisclosure
         {
@@ -503,8 +538,8 @@ namespace StudentReportGenerator.Services
         public System.Collections.Generic.List<string> SchoolDataProviderOptions { get; } = new()
         {
             "Manual Entry",
-            "Wonde (UK) — coming soon",
-            "OneRoster / Clever / ClassLink (US) — coming soon",
+            "Wonde (UK)",
+            "OneRoster / CSV import",
         };
 
         public string SelectedSchoolDataProvider
@@ -513,19 +548,110 @@ namespace StudentReportGenerator.Services
             set
             {
                 string clean = SanitizeControlOutput(value);
-                // Only Manual Entry is live today; connector choices are visible so IT can
-                // see the roadmap, but they cannot be activated until the integration ships
-                if (clean.Contains("coming soon"))
-                {
-                    MessageBox.Show("This SIS connector is on the roadmap but not yet available. The app will continue using manual entry.", "Not Yet Available", MessageBoxButton.OK, MessageBoxImage.Information);
-                    clean = "Manual Entry";
-                }
                 if (_appState.CurrentSettings.SchoolDataProvider != clean)
                 {
                     _appState.CurrentSettings.SchoolDataProvider = clean;
                     _appState.SaveSettings();
                 }
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(IsWondeSelected));
+                OnPropertyChanged(nameof(IsCsvProviderSelected));
+                SisTestStatus = string.Empty;
+            }
+        }
+
+        public bool IsWondeSelected => _appState.CurrentSettings.SchoolDataProvider?.Contains("Wonde") == true;
+        public bool IsCsvProviderSelected
+        {
+            get
+            {
+                string p = _appState.CurrentSettings.SchoolDataProvider ?? string.Empty;
+                return p.Contains("OneRoster") || p.Contains("CSV");
+            }
+        }
+
+        // Wonde credentials: the token is held in-memory as a SecureString (fed from a PasswordBox
+        // in code-behind, like the SMTP password) and DPAPI-encrypted on save.
+        private SecureString _wondeSecureToken = new SecureString();
+        public string WondeApiTokenInput
+        {
+            get => ConvertToPlainString(_wondeSecureToken);
+            set { _wondeSecureToken = ConvertToSecureString(value); OnPropertyChanged(); }
+        }
+
+        public string WondeSchoolId
+        {
+            get => _appState.CurrentSettings.WondeSchoolId;
+            set
+            {
+                string clean = SanitizeControlOutput(value).Trim();
+                if (_appState.CurrentSettings.WondeSchoolId != clean)
+                {
+                    _appState.CurrentSettings.WondeSchoolId = clean;
+                    _appState.SaveSettings();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string SisCsvLastImportDisplay => string.IsNullOrEmpty(_appState.CurrentSettings.SisCsvLastImportFile)
+            ? "No school data file imported yet."
+            : $"Last import: {_appState.CurrentSettings.SisCsvLastImportFile}";
+
+        private bool _isSyncingSis;
+        public bool IsSyncingSis
+        {
+            get => _isSyncingSis;
+            set { if (SetProperty(ref _isSyncingSis, value)) System.Windows.Input.CommandManager.InvalidateRequerySuggested(); }
+        }
+
+        private string _sisTestStatus = string.Empty;
+        public string SisTestStatus { get => _sisTestStatus; set => SetProperty(ref _sisTestStatus, value); }
+
+        /// <summary>Encrypts and persists the Wonde token currently held in memory. Called before
+        /// saving settings, testing the connection, or syncing, so a freshly pasted token is never lost.</summary>
+        private void FlushWondeCredentials()
+        {
+            _appState.CurrentSettings.WondeApiToken = CryptoService.EncryptSecret(ConvertToPlainString(_wondeSecureToken));
+            _appState.SaveSettings();
+        }
+
+        /// <summary>
+        /// "Test Connection" for the Wonde connector: one lightweight, read-only call
+        /// (<c>GET /schools/{id}/students?per_page=1</c>) purely to prove the token and school ID
+        /// are accepted — mirroring <see cref="TestApiKey"/> for AI providers.
+        /// </summary>
+        private async Task TestSisConnectionAsync()
+        {
+            FlushWondeCredentials();
+            string token = ConvertToPlainString(_wondeSecureToken);
+
+            if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(WondeSchoolId))
+            {
+                SisTestStatus = "⚠️ Enter both the Wonde API token and your school ID first.";
+                return;
+            }
+
+            IsSyncingSis = true;
+            SisTestStatus = "Testing connection to Wonde...";
+            try
+            {
+                using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+                var response = await client.GetAsync(
+                    $"{WondeSchoolDatabaseService.BaseUrl}/schools/{Uri.EscapeDataString(WondeSchoolId)}/students?per_page=1");
+
+                SisTestStatus = response.IsSuccessStatusCode
+                    ? "✅ Connected — Wonde accepted the token for this school."
+                    : $"❌ Wonde rejected the request (HTTP {(int)response.StatusCode}). Check the token, school ID, and that your school has approved access.";
+            }
+            catch (Exception ex)
+            {
+                SisTestStatus = $"❌ Network error: {ex.Message}";
+            }
+            finally
+            {
+                IsSyncingSis = false;
             }
         }
 
@@ -557,18 +683,116 @@ namespace StudentReportGenerator.Services
             ? $"Last synced: {_appState.CurrentSettings.LastSisSyncUtc.Value.ToLocalTime():g}"
             : "Never synced (no SIS connection configured).";
 
-        /// <summary>Manual "Sync Now" trigger for the School Connection tab. Placeholder timestamp
-        /// update until a real SIS connector (Wonde/OneRoster) is wired up — see <see cref="SchoolDataOrchestratorService"/>.</summary>
-        private void SyncNow()
+        /// <summary>
+        /// Manual "Sync Now" for the School Connection tab. For the CSV connector this *is* the
+        /// import: pick the school's exported file, parse it, load every row into the encrypted
+        /// cache, and auto-match roster profiles by name. For Wonde it refreshes cached stats for
+        /// roster students that already have a matched external ID (never a whole-school mirror).
+        /// </summary>
+        private async Task SyncNowAsync()
         {
-            if (_appState.CurrentSettings.SchoolDataProvider == "Manual Entry")
+            if (IsCsvProviderSelected)
             {
-                MessageBox.Show("No SIS connection is configured, so there is nothing to sync. Choose a school data provider first (connectors arriving in a future update).", "Nothing to Sync", MessageBoxButton.OK, MessageBoxImage.Information);
+                ImportSchoolDataCsv();
                 return;
             }
-            _appState.CurrentSettings.LastSisSyncUtc = DateTime.UtcNow;
-            _appState.SaveSettings();
-            OnPropertyChanged(nameof(LastSisSyncDisplay));
+
+            if (!IsWondeSelected)
+            {
+                MessageBox.Show("No SIS connection is configured, so there is nothing to sync. Choose a school data provider first.", "Nothing to Sync", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            FlushWondeCredentials();
+            var studentsWithIds = (StudentDatabaseService.LoadStudents() ?? new System.Collections.Generic.List<StudentProfile>())
+                .Where(s => !string.IsNullOrWhiteSpace(s.ExternalStudentId))
+                .ToList();
+
+            if (studentsWithIds.Count == 0)
+            {
+                MessageBox.Show("None of your roster students have an External ID (Wonde student ID) yet. Add IDs on the student profiles (or import a roster CSV with an ID column) so the app knows which records to fetch.", "No Matched Students", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            IsSyncingSis = true;
+            SisTestStatus = $"Syncing 0 of {studentsWithIds.Count}...";
+            try
+            {
+                var progress = new Progress<(int Done, int Total)>(p => SisTestStatus = $"Syncing {p.Done} of {p.Total}...");
+                var (refreshed, failed) = await _schoolData.RefreshAllAsync(studentsWithIds, progress);
+
+                _appState.CurrentSettings.LastSisSyncUtc = DateTime.UtcNow;
+                _appState.SaveSettings();
+                OnPropertyChanged(nameof(LastSisSyncDisplay));
+                SisTestStatus = failed == 0
+                    ? $"✅ Synced {refreshed} student(s) from Wonde."
+                    : $"Synced {refreshed} student(s); {failed} could not be fetched (see the log for details).";
+            }
+            catch (Exception ex)
+            {
+                SisTestStatus = $"❌ Sync failed: {ex.Message}";
+            }
+            finally
+            {
+                IsSyncingSis = false;
+            }
+        }
+
+        /// <summary>
+        /// CSV-connector import: parses the picked file via <see cref="SisCsvImportService"/>,
+        /// upserts every row into the DPAPI-encrypted cache stamped with the import time, and
+        /// auto-fills <see cref="StudentProfile.ExternalStudentId"/> on roster profiles whose name
+        /// matches a row — so reports can be grounded in the data immediately.
+        /// </summary>
+        private void ImportSchoolDataCsv()
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "CSV Files (*.csv)|*.csv" };
+            if (dialog.ShowDialog() != true) return;
+
+            try
+            {
+                var lines = File.ReadAllLines(dialog.FileName);
+                var parsed = SisCsvImportService.Parse(lines);
+
+                if (parsed.Rows.Count == 0)
+                {
+                    MessageBox.Show(
+                        "No usable rows were found.\n\n" + string.Join("\n", parsed.Warnings.Take(6)) +
+                        "\n\nExpected columns (any order): ExternalStudentId (required), Name, AttendancePercent, BehaviourPoints, Grades (e.g. \"Maths=6; Science=7\"), SupportPlan, TargetGrade.",
+                        "Import Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                int retention = _appState.CurrentSettings.SisCacheRetentionDays;
+                var importTime = DateTime.UtcNow;
+                foreach (var row in parsed.Rows)
+                {
+                    row.Stats.LastSyncedUtc = importTime;
+                    SchoolDataCacheService.UpsertStats(row.Stats, retention);
+                }
+
+                var roster = StudentDatabaseService.LoadStudents() ?? new System.Collections.Generic.List<StudentProfile>();
+                int matched = SisCsvImportService.MatchRoster(parsed.Rows, roster);
+                if (matched > 0) StudentDatabaseService.SaveStudents(roster);
+
+                _appState.CurrentSettings.LastSisSyncUtc = importTime;
+                _appState.CurrentSettings.SisCsvLastImportFile = Path.GetFileName(dialog.FileName);
+                _appState.SaveSettings();
+                OnPropertyChanged(nameof(LastSisSyncDisplay));
+                OnPropertyChanged(nameof(SisCsvLastImportDisplay));
+
+                string summary = $"Imported {parsed.Rows.Count} student record(s) into the encrypted local cache.\n" +
+                                 $"Auto-matched {matched} roster profile(s) by name.";
+                if (parsed.Warnings.Count > 0)
+                    summary += $"\n\n{parsed.Warnings.Count} warning(s):\n" + string.Join("\n", parsed.Warnings.Take(6));
+                MessageBox.Show(summary, "School Data Imported", MessageBoxButton.OK, MessageBoxImage.Information);
+                Serilog.Log.Information("SIS CSV import: file={File} rows={Rows} matched={Matched} user={User}",
+                    Path.GetFileName(dialog.FileName), parsed.Rows.Count, matched, Environment.UserName);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"The file could not be read: {ex.Message}", "Import Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         /// <summary>Lets a school's data lead wipe all locally cached SIS data on demand, after

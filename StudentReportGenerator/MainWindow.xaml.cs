@@ -58,6 +58,12 @@ namespace StudentReportGenerator
                 vm.SettingsVM.DynamicApiKeyPassword = ((PasswordBox)sender).Password;
         }
 
+        private void PbWondeToken_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel vm)
+                vm.SettingsVM.WondeApiTokenInput = ((PasswordBox)sender).Password;
+        }
+
         /// <summary>
         /// When <see cref="SettingsViewModel.SettingsUnlockPassword"/> is cleared programmatically
         /// (e.g. after a successful unlock, or a rejected attempt), clears the corresponding

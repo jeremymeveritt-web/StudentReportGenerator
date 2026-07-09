@@ -32,6 +32,14 @@ namespace StudentReportGenerator.Models
         // When set, the prompt builder ignores the report framing entirely and issues this
         // instruction against RawNotes instead (used for simplify/translate/tone-audit calls)
         public string UtilityInstruction { get; set; } = string.Empty;
+
+        /// <summary>Sampling temperature sent to the provider. Null means each provider's default (0.7).
+        /// Set from the teacher's "Writing creativity" setting.</summary>
+        public double? Temperature { get; set; }
+
+        /// <summary>Up to ~8 comment-bank phrases in the teacher's own voice, injected into the
+        /// system instructions as style exemplars when the teacher opts in.</summary>
+        public List<string> StyleExemplars { get; set; } = new List<string>();
     }
 
     /// <summary>Verified facts pulled from the school's SIS/MIS (or its local encrypted cache via
@@ -59,6 +67,11 @@ namespace StudentReportGenerator.Models
         }
         public bool IsSuccess { get; set; }
         public string ErrorMessage { get; set; } = string.Empty;
+
+        /// <summary>True when the failure was an HTTP timeout — the one failure mode callers queue
+        /// for automatic retry (offline drafting). Distinct from user cancellation, which is
+        /// surfaced as an <see cref="System.OperationCanceledException"/> instead.</summary>
+        public bool IsTimeout { get; set; }
     }
 
     /// <summary>One entry in the History Log: a generated report and its metadata, persisted via
@@ -183,6 +196,22 @@ namespace StudentReportGenerator.Models
         public bool IncludeSupportPlanInPrompts { get; set; } = false;
         public int SisCacheRetentionDays { get; set; } = 120;
         public DateTime? LastSisSyncUtc { get; set; }
+
+        // --- SIS connector credentials & state ---
+        /// <summary>Wonde API bearer token, DPAPI-encrypted via <see cref="Services.CryptoService.EncryptSecret"/>
+        /// exactly like the AI provider keys. Empty until a school's IT lead configures the connector.</summary>
+        public string WondeApiToken { get; set; } = string.Empty;
+        /// <summary>The Wonde school identifier (e.g. "A1930499544") the token is scoped to.</summary>
+        public string WondeSchoolId { get; set; } = string.Empty;
+        /// <summary>Filename (not path) of the last school-data CSV imported, shown in Settings.</summary>
+        public string SisCsvLastImportFile { get; set; } = string.Empty;
+
+        // --- AI generation quality ---
+        /// <summary>"Low" (0.3, most consistent) | "Balanced" (0.7) | "High" (0.95, most varied).</summary>
+        public string CreativityLevel { get; set; } = "Balanced";
+        /// <summary>When true, a sample of the teacher's comment-bank phrases is fed into the prompt
+        /// as style exemplars so drafts sound like the teacher, not a generic AI.</summary>
+        public bool UseCommentBankStyle { get; set; } = false;
 
         // --- Trust & disclosure ---
         public bool AppendAiDisclosure { get; set; } = true;

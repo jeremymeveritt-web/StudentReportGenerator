@@ -111,6 +111,7 @@ namespace StudentReportGenerator
         {
             // Named HttpClient via IHttpClientFactory so DNS/socket lifetimes are managed correctly
             services.AddHttpClient(AiServiceFactory.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(90));
+            services.AddHttpClient(SchoolDataOrchestratorService.SchoolDataHttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
 
             // Core Services (Singleton = One instance shared across the whole app)
             services.AddSingleton<AppStateService>();

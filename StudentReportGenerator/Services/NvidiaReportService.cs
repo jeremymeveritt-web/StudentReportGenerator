@@ -1,4 +1,4 @@
-﻿using System.Net.Http;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -12,15 +12,20 @@ namespace StudentReportGenerator.Services
     {
         public NvidiaReportService(HttpClient httpClient, string apiKey) : base(httpClient, apiKey) { }
 
-        protected override HttpRequestMessage BuildRequest(ReportRequest request)
+        protected override HttpRequestMessage BuildRequest(ReportRequest request, bool streaming = false)
         {
-            var prompt = PromptBuilderService.BuildSecurePrompt(request);
+            var parts = PromptBuilderService.BuildPromptParts(request);
             var payload = new
             {
                 model = request.SelectedModel,
-                messages = new[] { new { role = "user", content = prompt } },
+                messages = new[]
+                {
+                    new { role = "system", content = parts.SystemInstructions },
+                    new { role = "user", content = parts.UserContent }
+                },
                 max_tokens = Math.Max(1200, request.WordCount * 2),
-                temperature = 0.7
+                temperature = request.Temperature ?? 0.7,
+                stream = streaming
             };
 
             var msg = new HttpRequestMessage(HttpMethod.Post, "https://integrate.api.nvidia.com/v1/chat/completions");
@@ -35,5 +40,8 @@ namespace StudentReportGenerator.Services
             using var doc = JsonDocument.Parse(responseBody);
             return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
         }
+
+        protected override string? ParseStreamEvent(string eventJson) =>
+            OpenAiReportService.ParseChatCompletionsDelta(eventJson);
     }
 }

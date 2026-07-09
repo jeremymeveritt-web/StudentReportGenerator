@@ -103,6 +103,7 @@ namespace StudentReportGenerator.Tests
         }
     }
 
+    [Collection("SisCacheFile")] // serialised with SisCacheTimestampTests — both touch sis_stats_cache.dat
     public class SchoolDataCacheTests : DataFileBackupFixture
     {
         public SchoolDataCacheTests() : base("sis_stats_cache.dat") { }
