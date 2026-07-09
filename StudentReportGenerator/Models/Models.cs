@@ -222,6 +222,15 @@ namespace StudentReportGenerator.Models
         public double UiTextScale { get; set; } = 1.0;
         public bool SimpleMode { get; set; } = false;
 
+        // --- Appearance personalisation ---
+        /// <summary>Interface font family. Empty = derive from <see cref="DyslexiaFriendlyFont"/>
+        /// (backwards compatibility with settings saved before font choice existed).</summary>
+        public string FontFamilyName { get; set; } = string.Empty;
+        /// <summary>"Comfortable" (default) or "Compact" — drives control heights/padding resources.</summary>
+        public string LayoutDensity { get; set; } = "Comfortable";
+        /// <summary>Optional faint tint mixed into the app/card backgrounds. Empty = no tint.</summary>
+        public string BackgroundTintHex { get; set; } = string.Empty;
+
         public int TotalReportsGenerated { get; set; } = 0;
         public long TotalTokensEstimated { get; set; } = 0;
         public int GeminiReportsCount { get; set; } = 0;

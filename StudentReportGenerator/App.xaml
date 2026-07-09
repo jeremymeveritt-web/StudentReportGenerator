@@ -3,10 +3,23 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <Application.Resources>
-        <!-- Accessibility: swapped by SettingsViewModel.ApplyFontPreferences (dyslexia-friendly
-             font toggle and text-size scaling) -->
+        <!-- Accessibility & personalisation: swapped by SettingsViewModel.ApplyInterfacePreferences
+             (font family choice, dyslexia-friendly toggle, text-size scaling, layout density) -->
         <FontFamily x:Key="AppFontFamily">Segoe UI</FontFamily>
         <sys:Double x:Key="AppFontSize">13</sys:Double>
+        <sys:Double x:Key="AppFontSizeSmall">11</sys:Double>
+        <sys:Double x:Key="AppControlHeight">35</sys:Double>
+        <Thickness x:Key="AppControlPadding">8</Thickness>
+
+        <!-- Accent family: recomputed from the teacher's chosen colour by SettingsViewModel.ApplyTheme
+             (via ThemePaletteService.BuildAccentPalette), contrast-adjusted per light/dark mode.
+             ThemeAccentNav keeps the raw school branding colour for the top bar. -->
+        <SolidColorBrush x:Key="ThemeAccent" Color="#FF392A4C"/>
+        <SolidColorBrush x:Key="ThemeAccentHover" Color="#FF2E2240"/>
+        <SolidColorBrush x:Key="ThemeAccentSubtle" Color="#FFEDEAF1"/>
+        <SolidColorBrush x:Key="ThemeAccentText" Color="White"/>
+        <SolidColorBrush x:Key="ThemeAccentNav" Color="#FF392A4C"/>
+        <SolidColorBrush x:Key="ThemeAccentNavText" Color="White"/>
 
         <!-- Light-theme defaults. SettingsViewModel.ApplyTheme swaps every key below
              for its dark counterpart, so all UI colors MUST resolve through these

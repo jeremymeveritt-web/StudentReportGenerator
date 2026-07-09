@@ -58,6 +58,7 @@ namespace StudentReportGenerator.Services
         public ICommand PurgeSisCacheCommand { get; }
         public ICommand SyncNowCommand { get; }
         public ICommand TestSisConnectionCommand { get; }
+        public ICommand SelectAccentSwatchCommand { get; }
 
         public SettingsViewModel(AppStateService appState, SchoolDataOrchestratorService schoolData)
         {
@@ -74,6 +75,7 @@ namespace StudentReportGenerator.Services
             PurgeSisCacheCommand = new RelayCommand(_ => PurgeSisCache());
             SyncNowCommand = new AsyncRelayCommand(_ => SyncNowAsync(), _ => !IsSyncingSis);
             TestSisConnectionCommand = new AsyncRelayCommand(_ => TestSisConnectionAsync(), _ => !IsSyncingSis);
+            SelectAccentSwatchCommand = new RelayCommand(hex => { if (hex is string h && !string.IsNullOrWhiteSpace(h)) SelectedThemeColorHex = h; });
 
             InitializeSettings();
         }
@@ -150,7 +152,7 @@ namespace StudentReportGenerator.Services
 
             _isDarkMode = settings.IsDarkMode;
             ApplyTheme(_isDarkMode);
-            ApplyFontPreferences();
+            ApplyInterfacePreferences();
 
             ApplyBrandingConfiguration();
             EvaluateAiProviderOptions(settings.AiProvider);
@@ -432,7 +434,9 @@ namespace StudentReportGenerator.Services
                 {
                     _appState.CurrentSettings.ThemeColorHex = cleanHex;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(CustomAccentHex));
                     ApplyBrandingConfiguration();
+                    ApplyTheme(IsDarkMode); // accent family + primary buttons follow immediately
                     _appState.SaveSettings();
                 }
             }
@@ -447,9 +451,13 @@ namespace StudentReportGenerator.Services
                 if (_appState.CurrentSettings.DyslexiaFriendlyFont != value)
                 {
                     _appState.CurrentSettings.DyslexiaFriendlyFont = value;
+                    // Keep the checkbox and the font ComboBox coherent: ticking it selects the
+                    // dyslexia-friendly face, unticking returns to the default.
+                    _appState.CurrentSettings.FontFamilyName = value ? "Comic Sans MS" : "Segoe UI";
                     _appState.SaveSettings();
-                    ApplyFontPreferences();
+                    ApplyInterfacePreferences();
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(SelectedFontFamilyName));
                 }
             }
         }
@@ -464,9 +472,111 @@ namespace StudentReportGenerator.Services
                 {
                     _appState.CurrentSettings.UiTextScale = clamped;
                     _appState.SaveSettings();
-                    ApplyFontPreferences();
+                    ApplyInterfacePreferences();
                     OnPropertyChanged();
                 }
+            }
+        }
+
+        // --- Appearance personalisation (accent swatches, custom hex, fonts, density, tint) ---
+
+        /// <summary>Curated swatch grid: the original five dark branding colours plus brighter
+        /// options that read well as an accent in both light and dark mode (contrast-adjusted by
+        /// <see cref="ThemePaletteService.BuildAccentPalette"/> either way).</summary>
+        public System.Collections.Generic.List<string> AccentSwatchOptions { get; } = new()
+        {
+            "#FF392A4C", "#FF0A192F", "#FF1B3822", "#FF4A1525", "#FF263238",
+            "#FF00695C", "#FF1565C0", "#FF6A1B9A", "#FFC2185B", "#FFEF6C00",
+            "#FF2E7D32", "#FF5D4037",
+        };
+
+        /// <summary>Bound to the free-entry hex box. Invalid input never crashes theming: it just
+        /// sets <see cref="AccentHexStatus"/> and keeps the previous colour until the hex parses.</summary>
+        public string CustomAccentHex
+        {
+            get => _appState.CurrentSettings.ThemeColorHex;
+            set
+            {
+                string clean = SanitizeControlOutput(value).Trim();
+                if (ThemePaletteService.TryParseHex(clean) is null)
+                {
+                    AccentHexStatus = string.IsNullOrEmpty(clean) ? string.Empty : "Enter a colour like #1565C0";
+                    return;
+                }
+                AccentHexStatus = string.Empty;
+                SelectedThemeColorHex = clean;
+            }
+        }
+
+        private string _accentHexStatus = string.Empty;
+        public string AccentHexStatus { get => _accentHexStatus; set => SetProperty(ref _accentHexStatus, value); }
+
+        public System.Collections.Generic.List<string> FontFamilyOptions { get; } = BuildFontFamilyOptions();
+
+        private static System.Collections.Generic.List<string> BuildFontFamilyOptions()
+        {
+            var options = new System.Collections.Generic.List<string> { "Segoe UI", "Verdana", "Calibri", "Georgia", "Comic Sans MS" };
+            // OpenDyslexic is only offered when actually installed on this machine
+            if (Fonts.SystemFontFamilies.Any(f => f.Source.Contains("OpenDyslexic", StringComparison.OrdinalIgnoreCase)))
+                options.Add("OpenDyslexic");
+            return options;
+        }
+
+        public string SelectedFontFamilyName
+        {
+            get => string.IsNullOrWhiteSpace(_appState.CurrentSettings.FontFamilyName)
+                ? (_appState.CurrentSettings.DyslexiaFriendlyFont ? "Comic Sans MS" : "Segoe UI")
+                : _appState.CurrentSettings.FontFamilyName;
+            set
+            {
+                string clean = SanitizeControlOutput(value);
+                if (string.IsNullOrWhiteSpace(clean) || _appState.CurrentSettings.FontFamilyName == clean) return;
+                _appState.CurrentSettings.FontFamilyName = clean;
+                // Keep the legacy dyslexia checkbox coherent with an explicit font choice
+                _appState.CurrentSettings.DyslexiaFriendlyFont = clean is "Comic Sans MS" or "OpenDyslexic";
+                _appState.SaveSettings();
+                ApplyInterfacePreferences();
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsDyslexiaFriendlyFont));
+            }
+        }
+
+        public System.Collections.Generic.List<string> LayoutDensityOptions { get; } = new() { "Comfortable", "Compact" };
+
+        public string SelectedLayoutDensity
+        {
+            get => _appState.CurrentSettings.LayoutDensity;
+            set
+            {
+                string clean = SanitizeControlOutput(value);
+                if (string.IsNullOrWhiteSpace(clean) || _appState.CurrentSettings.LayoutDensity == clean) return;
+                _appState.CurrentSettings.LayoutDensity = clean;
+                _appState.SaveSettings();
+                ApplyInterfacePreferences();
+                OnPropertyChanged();
+            }
+        }
+
+        public System.Collections.ObjectModel.ObservableCollection<ComboBoxItemWrapper> BackgroundTintOptions { get; } = new()
+        {
+            new ComboBoxItemWrapper { Content = "None (default)", Tag = "" },
+            new ComboBoxItemWrapper { Content = "Warm cream", Tag = "#FFB98A3C" },
+            new ComboBoxItemWrapper { Content = "Cool blue", Tag = "#FF3C78B9" },
+            new ComboBoxItemWrapper { Content = "Soft green", Tag = "#FF3CB964" },
+            new ComboBoxItemWrapper { Content = "Lavender", Tag = "#FF7A5FBF" },
+        };
+
+        public string SelectedBackgroundTintHex
+        {
+            get => _appState.CurrentSettings.BackgroundTintHex;
+            set
+            {
+                string clean = SanitizeControlOutput(value);
+                if (_appState.CurrentSettings.BackgroundTintHex == clean) return;
+                _appState.CurrentSettings.BackgroundTintHex = clean;
+                _appState.SaveSettings();
+                ApplyTheme(IsDarkMode);
+                OnPropertyChanged();
             }
         }
 
@@ -484,15 +594,28 @@ namespace StudentReportGenerator.Services
             }
         }
 
-        /// <summary>Pushes the current font family/size choice into the app-wide
-        /// <c>AppFontFamily</c>/<c>AppFontSize</c> dynamic resources declared in App.xaml, which
-        /// every window and control in the app binds its <c>FontFamily</c>/<c>FontSize</c> to.</summary>
-        private void ApplyFontPreferences()
+        /// <summary>
+        /// Pushes the current font family, text scale, and layout density into the app-wide dynamic
+        /// resources declared in App.xaml (<c>AppFontFamily</c>, <c>AppFontSize</c>,
+        /// <c>AppFontSizeSmall</c>, <c>AppControlHeight</c>, <c>AppControlPadding</c>), which every
+        /// window and control binds to. An explicit <see cref="AppSettings.FontFamilyName"/> wins;
+        /// otherwise the dyslexia-friendly toggle decides, exactly as before that setting existed.
+        /// </summary>
+        private void ApplyInterfacePreferences()
         {
+            var settings = _appState.CurrentSettings;
             var res = System.Windows.Application.Current.Resources;
-            res["AppFontFamily"] = new System.Windows.Media.FontFamily(
-                _appState.CurrentSettings.DyslexiaFriendlyFont ? "Comic Sans MS" : "Segoe UI");
-            res["AppFontSize"] = 13.0 * _appState.CurrentSettings.UiTextScale;
+
+            string family = !string.IsNullOrWhiteSpace(settings.FontFamilyName)
+                ? settings.FontFamilyName
+                : (settings.DyslexiaFriendlyFont ? "Comic Sans MS" : "Segoe UI");
+            res["AppFontFamily"] = new System.Windows.Media.FontFamily(family);
+            res["AppFontSize"] = 13.0 * settings.UiTextScale;
+            res["AppFontSizeSmall"] = 11.0 * settings.UiTextScale;
+
+            bool compact = settings.LayoutDensity == "Compact";
+            res["AppControlHeight"] = compact ? 29.0 : 35.0;
+            res["AppControlPadding"] = new Thickness(compact ? 5 : 8);
         }
 
         // --- AI generation quality ---
@@ -856,97 +979,40 @@ namespace StudentReportGenerator.Services
             }
         }
 
-        // Light/dark colour palettes for the whole app's theme resources. Every key declared in
-        // App.xaml MUST have an entry in both dictionaries below, or Dark Mode will leave that
-        // element showing its (wrong) hardcoded XAML default when toggled.
-        private static readonly System.Collections.Generic.Dictionary<string, string> LightPalette = new()
-        {
-            ["ThemeAppBg"] = "#FFFAFAFA",
-            ["ThemeCardBg"] = "#FFFFFFFF",
-            ["ThemeText"] = "#FF333333",
-            ["ThemeMutedText"] = "#FF616161",
-            ["ThemeBorder"] = "#FFDDDDDD",
-            ["ThemeInputBg"] = "#FFFFFFFF",
-            ["ThemePreviewBg"] = "#FFF9F9F9",
-            ["ThemeButtonBg"] = "#FFEEEEEE",
-            ["ThemeButtonHoverBg"] = "#FFDDDDDD",
-            ["ThemePrimaryBtnBg"] = "#FF4CAF50",
-            ["ThemePrimaryBtnHoverBg"] = "#FF43A047",
-            ["ThemeDangerBg"] = "#FFFFEBEE",
-            ["ThemeDangerText"] = "#FFD32F2F",
-            ["ThemeDangerStrongBg"] = "#FFF44336",
-            ["ThemeInfoBg"] = "#FFE0F7FA",
-            ["ThemeInfoText"] = "#FF00838F",
-            ["ThemeInfoAccent"] = "#FF1E88E5",
-            ["ThemeWarningBg"] = "#FFFFF3E0",
-            ["ThemeWarningText"] = "#FFE65100",
-            ["ThemeWarningAccent"] = "#FFF57C00",
-            ["ThemeSuccessBg"] = "#FFE8F5E9",
-            ["ThemeSuccessText"] = "#FF2E7D32",
-            ["ThemeSuccessAccent"] = "#FF43A047",
-            ["ThemeAccentBlueBg"] = "#FF1976D2",
-            ["ThemeMetricCardBg"] = "#FFF5F5F5",
-            ["ThemeMetricIndigoBg"] = "#FFE8EAF6",
-            ["ThemeMetricNvidiaBg"] = "#FFE1F5FE",
-            ["ThemeMetricNvidiaText"] = "#FF01579B",
-            ["ThemeMetricGeminiBg"] = "#FFE0F7FA",
-            ["ThemeMetricGeminiText"] = "#FF006064",
-            ["ThemeMetricOpenAiBg"] = "#FFF3E5F5",
-            ["ThemeMetricOpenAiText"] = "#FF4A148C",
-            ["ThemeMetricClaudeBg"] = "#FFFFF3E0",
-            ["ThemeMetricClaudeText"] = "#FFE65100",
-        };
-
-        private static readonly System.Collections.Generic.Dictionary<string, string> DarkPalette = new()
-        {
-            ["ThemeAppBg"] = "#FF121212",
-            ["ThemeCardBg"] = "#FF1E1E1E",
-            ["ThemeText"] = "#FFE0E0E0",
-            ["ThemeMutedText"] = "#FFAAAAAA",
-            ["ThemeBorder"] = "#FF333333",
-            ["ThemeInputBg"] = "#FF2D2D2D",
-            ["ThemePreviewBg"] = "#FF252525",
-            ["ThemeButtonBg"] = "#FF2F2F2F",
-            ["ThemeButtonHoverBg"] = "#FF3D3D3D",
-            ["ThemePrimaryBtnBg"] = "#FF388E3C",
-            ["ThemePrimaryBtnHoverBg"] = "#FF2E7D32",
-            ["ThemeDangerBg"] = "#FF3B2226",
-            ["ThemeDangerText"] = "#FFEF9A9A",
-            ["ThemeDangerStrongBg"] = "#FFD32F2F",
-            ["ThemeInfoBg"] = "#FF0F2E33",
-            ["ThemeInfoText"] = "#FF4DD0E1",
-            ["ThemeInfoAccent"] = "#FF64B5F6",
-            ["ThemeWarningBg"] = "#FF3A2A16",
-            ["ThemeWarningText"] = "#FFFFB74D",
-            ["ThemeWarningAccent"] = "#FFFFB74D",
-            ["ThemeSuccessBg"] = "#FF1B2E1F",
-            ["ThemeSuccessText"] = "#FF81C784",
-            ["ThemeSuccessAccent"] = "#FF81C784",
-            ["ThemeAccentBlueBg"] = "#FF1565C0",
-            ["ThemeMetricCardBg"] = "#FF232323",
-            ["ThemeMetricIndigoBg"] = "#FF23263A",
-            ["ThemeMetricNvidiaBg"] = "#FF12293A",
-            ["ThemeMetricNvidiaText"] = "#FF81D4FA",
-            ["ThemeMetricGeminiBg"] = "#FF103235",
-            ["ThemeMetricGeminiText"] = "#FF80DEEA",
-            ["ThemeMetricOpenAiBg"] = "#FF2A1D31",
-            ["ThemeMetricOpenAiText"] = "#FFCE93D8",
-            ["ThemeMetricClaudeBg"] = "#FF33270F",
-            ["ThemeMetricClaudeText"] = "#FFFFCC80",
-        };
-
-        /// <summary>Overwrites every theme <see cref="SolidColorBrush"/> resource in
-        /// <c>Application.Current.Resources</c> with the chosen palette. Because every themed
-        /// control in the app binds via <c>DynamicResource</c> (not <c>StaticResource</c>), this
-        /// single call is enough to re-theme the entire UI instantly, with no window reload.</summary>
+        /// <summary>
+        /// Overwrites every theme <see cref="SolidColorBrush"/> resource in
+        /// <c>Application.Current.Resources</c> with the chosen palette (base palettes live in
+        /// <see cref="ThemePaletteService"/>), then layers on the personalisation: the optional
+        /// background tint mixed into app/card backgrounds, and the accent family derived from the
+        /// teacher's chosen colour — which also re-skins the primary buttons. Because every themed
+        /// control binds via <c>DynamicResource</c> (not <c>StaticResource</c>), this single call
+        /// re-themes the entire UI instantly, with no window reload.
+        /// </summary>
         private void ApplyTheme(bool isDark)
         {
-            var palette = isDark ? DarkPalette : LightPalette;
+            var settings = _appState.CurrentSettings;
+            var palette = isDark ? ThemePaletteService.DarkPalette : ThemePaletteService.LightPalette;
             var res = System.Windows.Application.Current.Resources;
+            var tint = ThemePaletteService.TryParseHex(settings.BackgroundTintHex);
+
             foreach (var entry in palette)
             {
-                res[entry.Key] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(entry.Value));
+                var color = (Color)ColorConverter.ConvertFromString(entry.Value);
+                if (tint.HasValue && entry.Key is "ThemeAppBg" or "ThemeCardBg" or "ThemePreviewBg")
+                    color = ThemePaletteService.ApplyBackgroundTint(color, tint.Value);
+                res[entry.Key] = new SolidColorBrush(color);
             }
+
+            // Accent family: fall back to the default purple if the stored hex is ever corrupt
+            var accent = ThemePaletteService.TryParseHex(settings.ThemeColorHex)
+                         ?? (Color)ColorConverter.ConvertFromString("#FF392A4C");
+            var accents = ThemePaletteService.BuildAccentPalette(accent, isDark);
+            foreach (var entry in accents)
+                res[entry.Key] = new SolidColorBrush(entry.Value);
+
+            // Primary buttons follow the accent rather than staying app-green
+            res["ThemePrimaryBtnBg"] = new SolidColorBrush(accents["ThemeAccent"]);
+            res["ThemePrimaryBtnHoverBg"] = new SolidColorBrush(accents["ThemeAccentHover"]);
         }
     }
 }
